@@ -9,6 +9,14 @@ services:
         fromDatabase:
           name: investment-db
           property: connectionString
+      - key: SPRING_DATASOURCE_USERNAME
+        fromDatabase:
+          name: investment-db
+          property: user
+      - key: SPRING_DATASOURCE_PASSWORD
+        fromDatabase:
+          name: investment-db
+          property: password
       - key: SPRING_DATA_REDIS_URL
         fromService:
           name: investment-redis
