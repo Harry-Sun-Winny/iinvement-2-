@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: investment-platform
+    runtime: java
+    buildCommand: ./mvnw clean package -DskipTests
+    startCommand: java -jar target/investment-platform-0.1.0.jar
+    envVars:
+      - key: SPRING_DATASOURCE_URL
+        fromDatabase:
+          name: investment-db
+          property: connectionString
+      - key: SPRING_DATA_REDIS_URL
+        fromService:
+          name: investment-redis
+          type: redis
+          property: connectionString
+      - key: PORT
+        value: 8080
+
+databases:
+  - name: investment-db
+    databaseName: investment_platform
+    user: admin
+
+  - name: investment-redis
+    type: redis
