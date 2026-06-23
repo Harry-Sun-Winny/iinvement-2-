@@ -98,6 +98,39 @@ interface PerformancePoint {
   value: number;
 }
 
+interface DashboardCache {
+  portfolios: Portfolio[];
+  watchlists: Watchlist[];
+  goals: Goal[];
+  positions: DashboardPosition[];
+  portfolioStats: Record<string, PortfolioStat>;
+  performance: PerformancePoint[];
+  savedAt: number;
+}
+
+const DASHBOARD_CACHE_KEY = "investment-dashboard-cache-v1";
+
+function readDashboardCache(): DashboardCache | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as DashboardCache;
+    if (!Array.isArray(parsed.portfolios) || !Array.isArray(parsed.positions)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeDashboardCache(cache: DashboardCache) {
+  try {
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Ignore cache quota/private-mode failures; backend remains source of truth.
+  }
+}
+
 const chartColors = ["#ff6b6b", "#ff9f43", "#feca57", "#0abf53", "#54a0ff", "#5f27cd", "#c44dff"];
 
 const fmtMoney = (value: number | null | undefined) =>
@@ -138,6 +171,18 @@ export default function Page() {
       window.location.href = "/login";
       return;
     }
+
+    const cache = readDashboardCache();
+    if (cache) {
+      setPortfolios(cache.portfolios);
+      setWatchlists(cache.watchlists);
+      setGoals(cache.goals);
+      setPositions(cache.positions);
+      setPortfolioStats(cache.portfolioStats);
+      setPerformance(cache.performance);
+      setLoading(false);
+    }
+
     loadData();
   }, []);
 
@@ -146,10 +191,27 @@ export default function Page() {
     setError("");
     try {
       const [portfolioData, watchlistData, goalData] = await Promise.all([getPortfolios(), getWatchlists(), getGoals()]);
+      const existingCache = readDashboardCache();
+      if (portfolioData.length === 0 && existingCache?.portfolios?.length) {
+        setError("Backend đang trả dữ liệu trống nên dashboard tạm giữ số liệu cache gần nhất.");
+        return;
+      }
+      const dashboardData = await loadDashboardData(portfolioData);
       setPortfolios(portfolioData);
       setWatchlists(watchlistData);
       setGoals(goalData);
-      await loadDashboardData(portfolioData);
+      setPositions(dashboardData.positions);
+      setPortfolioStats(dashboardData.portfolioStats);
+      setPerformance(dashboardData.performance);
+      writeDashboardCache({
+        portfolios: portfolioData,
+        watchlists: watchlistData,
+        goals: goalData,
+        positions: dashboardData.positions,
+        portfolioStats: dashboardData.portfolioStats,
+        performance: dashboardData.performance,
+        savedAt: Date.now(),
+      });
     } catch (e: any) {
       if (e instanceof ApiError && e.status === 401) {
         localStorage.removeItem("token");
@@ -208,7 +270,7 @@ export default function Page() {
                   const quote = await getStockPrice(symbol);
                   if (typeof quote?.price === "number" && Number.isFinite(quote.price)) currentPrice = quote.price;
                   if (typeof quote?.change === "number" && Number.isFinite(quote.change)) todayPnl = item.qty * quote.change;
-                } catch {}
+                } catch { }
 
                 const avgCost = item.cost / item.qty;
                 const displayPrice = currentPrice ?? avgCost;
@@ -237,7 +299,7 @@ export default function Page() {
           const pnl = priced.length ? priced.reduce((sum, item) => sum + (item.pnl || 0), 0) : null;
           const cost = priced.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
           nextStats[portfolio.id] = { id: portfolio.id, value, pnl, returnPct: pnl == null || cost <= 0 ? null : (pnl / cost) * 100 };
-        } catch {}
+        } catch { }
       })
     );
 
@@ -249,16 +311,14 @@ export default function Page() {
         return { label: label.slice(5), value: cumulative };
       });
 
-    setPositions(nextPositions);
-    setPortfolioStats(nextStats);
-    setPerformance(points);
+    return { positions: nextPositions, portfolioStats: nextStats, performance: points };
   }
 
   const pricedPositions = useMemo(() => positions.filter(item => item.marketValue != null), [positions]);
   const portfolioValue = positions.length ? positions.reduce((sum, item) => sum + (item.marketValue || 0), 0) : null;
   const totalCost = positions.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
   const totalPnl = positions.length ? positions.reduce((sum, item) => sum + (item.pnl || 0), 0) : null;
-  const todayPnl = positions.some(item => item.todayPnl != null) ? positions.reduce((sum, item) => sum + (item.todayPnl || 0), 0) : null;
+  const todayPnl = positions.length ? positions.reduce((sum, item) => sum + (item.todayPnl || 0), 0) : null;
   const totalReturn = totalPnl == null || totalCost <= 0 ? null : (totalPnl / totalCost) * 100;
   const largestWeight = portfolioValue ? Math.max(0, ...positions.map(item => ((item.marketValue || 0) / portfolioValue) * 100)) : null;
 
@@ -279,10 +339,13 @@ export default function Page() {
     try {
       const created = await createPortfolio(portfolioForm.name.trim(), portfolioForm.currency, portfolioForm.type);
       const next = [...portfolios, created];
+      const dashboardData = await loadDashboardData(next);
       setPortfolios(next);
+      setPositions(dashboardData.positions);
+      setPortfolioStats(dashboardData.portfolioStats);
+      setPerformance(dashboardData.performance);
       setPortfolioForm({ name: "", currency: "USD", type: "STOCKS" });
       setModal(null);
-      await loadDashboardData(next);
     } catch (e: any) {
       setError(e.message);
     }
@@ -317,8 +380,11 @@ export default function Page() {
     try {
       await deletePortfolio(id);
       const next = portfolios.filter(item => item.id !== id);
+      const dashboardData = await loadDashboardData(next);
       setPortfolios(next);
-      await loadDashboardData(next);
+      setPositions(dashboardData.positions);
+      setPortfolioStats(dashboardData.portfolioStats);
+      setPerformance(dashboardData.performance);
     } catch (e: any) {
       setError(e.message);
     }
@@ -352,14 +418,14 @@ export default function Page() {
       try {
         const transactions = await getTransactions(portfolio.id);
         transactions.forEach(tx => symbols.add(tx.assetSymbol));
-      } catch {}
+      } catch { }
     }));
 
     await Promise.all(watchlists.map(async watchlist => {
       try {
         const items = await getWatchlistItems(watchlist.id);
         items.forEach(item => symbols.add(item.assetSymbol));
-      } catch {}
+      } catch { }
     }));
 
     const fetched: NewsItem[] = [];
@@ -368,7 +434,7 @@ export default function Page() {
         const res = await fetch(`/api/stock-news?symbol=${encodeURIComponent(symbol)}`);
         const data = await res.json();
         if (Array.isArray(data)) fetched.push(...data);
-      } catch {}
+      } catch { }
     }));
 
     const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
