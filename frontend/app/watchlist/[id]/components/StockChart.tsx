@@ -71,6 +71,12 @@ function filterByRange(data: StockSeriesPoint[], range: RangeKey) {
   return data.filter(point => new Date(point.date).getTime() >= start);
 }
 
+function downsample(data: StockSeriesPoint[], maxPoints = 900) {
+  if (data.length <= maxPoints) return data;
+  const step = (data.length - 1) / (maxPoints - 1);
+  return Array.from({ length: maxPoints }, (_, index) => data[Math.round(index * step)]);
+}
+
 function StockTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
 
@@ -112,8 +118,14 @@ function StockChart({ data, loading, error }: StockChartProps) {
   });
 
   const visibleData = useMemo(() => filterByRange(data, range), [data, range]);
+  const chartData = useMemo(() => downsample(visibleData), [visibleData]);
+  const availability = useMemo(
+    () => Object.fromEntries(seriesConfig.map(item => [item.key, data.some(point => point[item.key] != null)])) as Record<SeriesKey, boolean>,
+    [data],
+  );
 
   function toggleSeries(key: SeriesKey) {
+    if (!availability[key]) return;
     setActiveSeries(prev => ({ ...prev, [key]: !prev[key] }));
   }
 
@@ -142,13 +154,22 @@ function StockChart({ data, loading, error }: StockChartProps) {
               key={item.key}
               variant="outline"
               role="button"
-              tabIndex={0}
+              tabIndex={availability[item.key] ? 0 : -1}
+              aria-disabled={!availability[item.key]}
+              title={availability[item.key] ? `Toggle ${item.label}` : `${item.label}: no data available`}
               onClick={() => toggleSeries(item.key)}
               onKeyDown={event => event.key === "Enter" && toggleSeries(item.key)}
-              className={`cursor-pointer border-white/10 px-3 py-1.5 ${activeSeries[item.key] ? "bg-white/[0.08] text-white" : "text-slate-500"}`}
+              className={`border-white/10 px-3 py-1.5 ${
+                !availability[item.key]
+                  ? "cursor-not-allowed opacity-40"
+                  : activeSeries[item.key]
+                    ? "cursor-pointer bg-white/[0.08] text-white"
+                    : "cursor-pointer text-slate-500"
+              }`}
             >
               <span className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
               {item.label}
+              {!availability[item.key] && <span className="ml-1 text-[10px]">No data</span>}
             </Badge>
           ))}
         </div>
@@ -157,12 +178,12 @@ function StockChart({ data, loading, error }: StockChartProps) {
           <Skeleton className="h-[420px] w-full bg-white/10" />
         ) : error ? (
           <div className="grid h-[420px] place-items-center rounded-xl border border-red-500/20 bg-red-500/10 text-sm text-red-300">{error}</div>
-        ) : visibleData.length === 0 ? (
+        ) : chartData.length === 0 ? (
           <div className="grid h-[420px] place-items-center rounded-xl border border-white/10 bg-slate-950/40 text-sm text-slate-500">No chart data available.</div>
         ) : (
           <div className="h-[420px]">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={visibleData} margin={{ top: 10, right: 18, bottom: 20, left: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 10, right: 18, bottom: 20, left: 0 }}>
                 <defs>
                   <linearGradient id="priceFill" x1="0" x2="0" y1="0" y2="1">
                     <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.28} />

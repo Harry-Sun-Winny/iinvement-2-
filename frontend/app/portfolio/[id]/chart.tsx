@@ -32,6 +32,7 @@ interface Position {
   returnPct: number;
   totalReturnPct: number;
   weight: number;
+  isStalePrice: boolean;
 }
 
 interface ChartPoint {
@@ -65,7 +66,17 @@ function normalizeType(value: string) {
   return value?.toUpperCase().trim();
 }
 
-function assetType(symbol: string, name = ""): AssetFilter {
+// Heuristic guess - không chính xác 100%, nên thay bằng field category từ backend.
+// Ví dụ: công ty tên chứa "USD" sẽ bị nhận nhầm là CASH.
+// TODO: Khi backend Transaction có field category/assetCategory, ưu tiên dùng field đó.
+function assetType(symbol: string, name = "", backendCategory?: string): AssetFilter {
+  // Ưu tiên dùng category từ backend nếu có
+  if (backendCategory) {
+    const normalized = backendCategory.toUpperCase().trim();
+    const validTypes: AssetFilter[] = ["STOCKS", "ETF", "CRYPTO", "BONDS", "CASH"];
+    if (validTypes.includes(normalized as AssetFilter)) return normalized as AssetFilter;
+  }
+  // Fallback: regex heuristic guess
   const text = `${symbol} ${name}`.toUpperCase();
   if (/(BTC|ETH|SOL|BNB|USDT|USDC|XRP|ADA|DOGE)/.test(text)) return "CRYPTO";
   if (/(ETF|SPY|QQQ|VOO|VTI|IWM|DIA)/.test(text)) return "ETF";
@@ -80,8 +91,8 @@ function formatCompact(value: number) {
   if (abs >= 1_000_000_000_000) return `${sign}$${(abs / 1_000_000_000_000).toFixed(2)}T`;
   if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(2)}B`;
   if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}$${abs.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  if (abs >= 1_000) return `${sign}$${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return `${sign}$${abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatPct(value: number) {
@@ -102,13 +113,15 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
   const sorted = [...transactions].sort((a, b) =>
     new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime()
   );
-  const visible = sorted.filter(t => filter === "ALL" || assetType(t.assetSymbol, t.assetName) === filter);
+  const visible = sorted.filter(t => filter === "ALL" || assetType(t.assetSymbol, t.assetName, (t as any).category ?? (t as any).assetCategory) === filter);
 
-  const state: Record<string, { quantity: number; cost: number; lifetimeCost: number; realizedPnl: number; name: string; type: AssetFilter; lastPrice: number }> = {};
+  const state: Record<string, { quantity: number; cost: number; lifetimeCost: number; realizedPnl: number; name: string; type: AssetFilter; lastPrice: number; locked?: number }> = {};
   const points: ChartPoint[] = [];
   let totalBuy = 0;
   let totalSell = 0;
   let realizedPnl = 0;
+  let runningMarketValueAtLastPrice = 0;
+  let runningCostBasis = 0;
 
   for (const t of visible) {
     const symbol = t.assetSymbol.toUpperCase();
@@ -118,10 +131,12 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
       lifetimeCost: 0,
       realizedPnl: 0,
       name: t.assetName || symbol,
-      type: assetType(symbol, t.assetName),
+      type: assetType(symbol, t.assetName, (t as any).category ?? (t as any).assetCategory),
       lastPrice: t.price,
     };
     const side = normalizeType(t.type);
+    const previousMarketValue = Math.max(0, entry.quantity) * entry.lastPrice;
+    const previousCostBasis = entry.cost;
     entry.name = t.assetName || entry.name;
     entry.lastPrice = t.price;
 
@@ -131,7 +146,6 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
       entry.lifetimeCost += t.quantity * t.price;
       totalBuy += t.quantity * t.price;
     }
-
     if (side === "SELL") {
       const avgCost = entry.quantity > 0 ? entry.cost / entry.quantity : t.price;
       const soldCost = Math.min(t.quantity, entry.quantity) * avgCost;
@@ -143,10 +157,18 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
       realizedPnl += sellPnl;
     }
 
+    if (side === "STAKE") {
+      // STAKE locks quantity but does not change holdings or cost basis
+      entry.locked = (entry.locked ?? 0) + t.quantity;
+      // do not modify entry.quantity or entry.cost
+    }
+
     state[symbol] = entry;
 
-    const value = Object.values(state).reduce((sum, item) => sum + Math.max(0, item.quantity) * item.lastPrice, 0);
-    const invested = Object.values(state).reduce((sum, item) => sum + item.cost, 0);
+    runningMarketValueAtLastPrice += Math.max(0, entry.quantity) * entry.lastPrice - previousMarketValue;
+    runningCostBasis += entry.cost - previousCostBasis;
+    const value = runningMarketValueAtLastPrice;
+    const invested = runningCostBasis;
     const date = t.transactionDate.slice(0, 10);
     const point = { date, value, invested, pnl: value - invested + realizedPnl };
     const last = points[points.length - 1];
@@ -157,6 +179,7 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
   let positions: Position[] = Object.entries(state)
     .map(([symbol, item]) => {
       const quantity = Math.max(0, item.quantity);
+      const hasRealtimePrice = symbol in currentPrices;
       const price = currentPrices[symbol] ?? item.lastPrice;
       const marketValue = quantity * price;
       const pnl = marketValue - item.cost;
@@ -175,9 +198,9 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
         returnPct: item.cost > 0 ? (pnl / item.cost) * 100 : 0,
         totalReturnPct: item.lifetimeCost > 0 ? (totalPnl / item.lifetimeCost) * 100 : 0,
         weight: 0,
+        isStalePrice: !hasRealtimePrice,
       };
-    })
-    .filter(p => p.quantity > 0 || Math.abs(p.pnl) > 0.01);
+    });
 
   const marketValue = positions.reduce((sum, p) => sum + p.marketValue, 0);
   positions = positions.map(position => ({
@@ -186,7 +209,9 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
   }));
   const costBasis = positions.reduce((sum, p) => sum + p.cost, 0);
   const totalPnl = marketValue - costBasis + realizedPnl;
-  const cashAvailable = Math.max(0, totalSell - totalBuy);
+  // netTradingCashFlow represents net cash flow from trading (sell - buy).
+  // NOTE: This is NOT the actual cash balance — integrate backend cash balance when available.
+  const netTradingCashFlow = totalSell - totalBuy;
 
   const today = new Date().toISOString().slice(0, 10);
   if (points.length && points[points.length - 1].date !== today) {
@@ -198,20 +223,21 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
     ? rangedPoints[rangedPoints.length - 1].value - rangedPoints[rangedPoints.length - 2].value
     : 0;
 
+  // drawdown should be calculated on the ranged points visible to the user
   let peak = 0;
   let drawdown = 0;
-  for (const point of points) {
+  for (const point of rangedPoints) {
     peak = Math.max(peak, point.value);
     if (peak > 0) drawdown = Math.min(drawdown, ((point.value - peak) / peak) * 100);
   }
 
   const largestPosition = marketValue > 0 ? Math.max(0, ...positions.map(p => (p.marketValue / marketValue) * 100)) : 0;
-  const exposure = marketValue + cashAvailable > 0 ? (marketValue / (marketValue + cashAvailable)) * 100 : 0;
+  const exposure = marketValue + netTradingCashFlow > 0 ? (marketValue / (marketValue + netTradingCashFlow)) * 100 : 0;
   const allocation = positions.reduce<Record<string, number>>((acc, p) => {
     acc[p.type] = (acc[p.type] ?? 0) + p.marketValue;
     return acc;
   }, {});
-  if (cashAvailable > 0) allocation.CASH = (allocation.CASH ?? 0) + cashAvailable;
+  if (netTradingCashFlow > 0) allocation.CASH = (allocation.CASH ?? 0) + netTradingCashFlow;
 
   const allocationData = Object.entries(allocation).filter(([, value]) => value > 0).map(([name, value]) => ({ name, value }));
   const winLoss = positions.filter(p => Math.abs(p.returnPct) > 0.01);
@@ -230,7 +256,7 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
       todayPnl,
       totalPnl,
       totalReturnPct: costBasis > 0 ? (totalPnl / costBasis) * 100 : 0,
-      cashAvailable,
+      netTradingCashFlow,
       trades: visible.length,
       winRate: winLoss.length ? (wins.length / winLoss.length) * 100 : 0,
       avgWin: wins.length ? wins.reduce((sum, p) => sum + p.returnPct, 0) / wins.length : 0,
@@ -243,33 +269,38 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
   };
 }
 
-function KpiCard({ label, value, badge, icon: Icon, hero = false, positive = true }: {
+function KpiCard({ label, value, badge, icon: Icon, hero = false, positive = true, neutral = false, description }: {
   label: string;
   value: string;
   badge?: string;
   icon: typeof DollarSign;
   hero?: boolean;
   positive?: boolean;
+  neutral?: boolean;
+  description?: string;
 }) {
   return (
     <motion.div whileHover={{ y: -3 }} transition={{ duration: 0.18 }}>
-      <Card className={`border-white/10 bg-white/[0.035] shadow-xl shadow-black/10 ${hero ? "min-h-[164px]" : "min-h-[118px]"}`}>
+      <Card className={`border-white/10 bg-white/[0.035] shadow-xl shadow-black/10 ${hero ? "min-h-[164px]" : "min-h-[132px]"}`}>
         <CardHeader className="flex-row items-start justify-between pb-2">
           <div>
             <CardDescription className="text-xs uppercase tracking-wide text-slate-500">{label}</CardDescription>
-            <CardTitle className={`${hero ? "mt-4 text-4xl" : "mt-3 text-2xl"} tracking-tight text-white`}>{value}</CardTitle>
+            <CardTitle className={`${hero ? "mt-4 text-4xl" : "mt-3 text-2xl"} tracking-tight ${neutral ? "text-slate-400" : "text-white"}`}>{value}</CardTitle>
           </div>
           <div className="rounded-lg border border-white/10 bg-slate-950/80 p-2 text-cyan-300">
             <Icon className="h-4 w-4" />
           </div>
         </CardHeader>
-        {badge && (
-          <CardContent>
-            <Badge variant={positive ? "default" : "destructive"} className={positive ? "bg-emerald-500/15 text-emerald-300" : ""}>
+        <CardContent className="pt-0">
+          {badge && (
+            <Badge variant={neutral ? "secondary" : positive ? "default" : "destructive"} className={neutral ? "bg-slate-500/15 text-slate-400" : positive ? "bg-emerald-500/15 text-emerald-300" : ""}>
               {badge}
             </Badge>
-          </CardContent>
-        )}
+          )}
+          {description && (
+            <p className="mt-1.5 text-xs text-slate-500 leading-snug">{description}</p>
+          )}
+        </CardContent>
       </Card>
     </motion.div>
   );
@@ -294,11 +325,11 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
   return (
     <section className="mb-8 space-y-6">
       <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 lg:grid-cols-[1.35fr_1fr_1fr]">
-        <KpiCard hero label="Portfolio Value" value={formatCompact(metrics.marketValue)} badge={formatPct(metrics.totalReturnPct)} icon={BriefcaseBusiness} positive={totalPositive} />
-        <KpiCard label="Total Return" value={formatCompact(metrics.totalPnl)} badge={formatPct(metrics.totalReturnPct)} icon={Percent} positive={totalPositive} />
-        <KpiCard label="P/L Today" value={`${metrics.todayPnl >= 0 ? "+" : ""}${formatCompact(metrics.todayPnl)}`} icon={metrics.todayPnl >= 0 ? TrendingUp : TrendingDown} positive={metrics.todayPnl >= 0} />
-        <KpiCard label="Cash Available" value={formatCompact(metrics.cashAvailable)} icon={Banknote} />
-        <KpiCard label="Total Transactions" value={metrics.trades.toLocaleString()} icon={Activity} />
+        <KpiCard hero label="Portfolio Value" value={formatCompact(metrics.marketValue)} badge={formatPct(metrics.totalReturnPct)} icon={BriefcaseBusiness} positive={totalPositive} neutral={metrics.marketValue === 0} />
+        <KpiCard label="Total Return" value={formatCompact(metrics.totalPnl)} badge={formatPct(metrics.totalReturnPct)} icon={Percent} positive={totalPositive} neutral={metrics.totalPnl === 0} description="Unrealized + realized gains" />
+        <KpiCard label={`P/L (${range})`} value={`${metrics.todayPnl >= 0 ? "+" : ""}${formatCompact(metrics.todayPnl)}`} icon={metrics.todayPnl >= 0 ? TrendingUp : TrendingDown} positive={metrics.todayPnl >= 0} neutral={metrics.todayPnl === 0} description={`Change in portfolio value over ${range}`} />
+        <KpiCard label="Net Trading Cash Flow" value={formatCompact(metrics.netTradingCashFlow)} icon={Banknote} positive={metrics.netTradingCashFlow >= 0} neutral={metrics.netTradingCashFlow === 0} description="Cash spent on buys vs. received from sells. Not profit/loss." />
+        <KpiCard label="Total Transactions" value={metrics.trades.toLocaleString("en-US")} icon={Activity} description="Buy, sell, swap & stake orders" />
       </motion.div>
 
       <Card className="border-white/10 bg-white/[0.035]">
@@ -373,7 +404,7 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
             </div>
             <div className="space-y-3 self-center">
               {allocationData.map((item, index) => {
-                const pct = metrics.marketValue + metrics.cashAvailable > 0 ? (item.value / (metrics.marketValue + metrics.cashAvailable)) * 100 : 0;
+                const pct = metrics.marketValue + metrics.netTradingCashFlow > 0 ? (item.value / (metrics.marketValue + metrics.netTradingCashFlow)) * 100 : 0;
                 return (
                   <div key={item.name} className="flex items-center justify-between gap-3 text-sm">
                     <span className="flex items-center gap-2 text-slate-300">
@@ -481,7 +512,19 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
                 const totalNegative = position.totalPnl < 0;
                 return (
                   <TableRow key={position.symbol} className="border-white/10 hover:bg-white/[0.04]">
-                    <TableCell className="font-semibold text-white">{position.symbol}</TableCell>
+                    <TableCell className="font-semibold text-white">
+                      <span className="flex items-center gap-1.5">
+                        {position.symbol}
+                        {position.isStalePrice && (
+                          <span
+                            title="Không lấy được giá thị trường real-time, đang dùng giá giao dịch gần nhất"
+                            className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 cursor-help"
+                          >
+                            Giá cũ
+                          </span>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="max-w-[220px] truncate text-slate-300">{position.name}</TableCell>
                     <TableCell className="text-right text-slate-300">{position.quantity.toLocaleString(undefined, { maximumFractionDigits: 6 })}</TableCell>
                     <TableCell className="text-right text-slate-300">{formatCompact(avgCost)}</TableCell>

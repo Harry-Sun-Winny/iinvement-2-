@@ -112,6 +112,7 @@ async function crawlPage(url: string): Promise<string> {
 export async function GET(req: NextRequest) {
   const symbol = req.nextUrl.searchParams.get("symbol");
   const withCrawl = req.nextUrl.searchParams.get("crawl") === "1";
+  const compact = req.nextUrl.searchParams.get("compact") === "1";
 
   if (!symbol) return NextResponse.json({ error: "No symbol" }, { status: 400 });
 
@@ -151,7 +152,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Crawl thêm nội dung chi tiết nếu cần
-  if (news.length > 0) {
+  if (news.length > 0 && !compact) {
     const enriched = await Promise.all(news.slice(0, 5).map(async (n) => {
       if (n.summary && n.summary.length > 100) return n;
       const content = await crawlPage(n.url);
@@ -160,6 +161,11 @@ export async function GET(req: NextRequest) {
     news = [...enriched, ...news.slice(5)];
   }
 
+  const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
+  news = news.filter((item) => {
+    const publishedAt = new Date(item.publishedAt).getTime();
+    return Number.isFinite(publishedAt) && publishedAt >= twelveHoursAgo;
+  });
   news.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
   return NextResponse.json(news.slice(0, 8));
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowRight, TrendingUp } from "lucide-react";
 import { login, register } from "../lib/api";
 
@@ -11,18 +11,43 @@ export default function LoginPage() {
   const [fullName, setFullName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [takingLonger, setTakingLonger] = useState(false);
+  const activeRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("reason") === "session-expired") {
+      setError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      setTakingLonger(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setTakingLonger(true), 2500);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setLoading(true);
+    const controller = new AbortController();
+    activeRequest.current = controller;
     try {
-      const res = mode === "login" ? await login(email, password) : await register(email, password, fullName);
+      const res = mode === "login"
+        ? await login(email, password, controller.signal)
+        : await register(email, password, fullName, controller.signal);
       localStorage.setItem("token", res.token);
       window.location.href = "/";
     } catch (err: any) {
-      setError(err.message ?? "Đăng nhập thất bại");
+      if (!controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : `${mode === "login" ? "Đăng nhập" : "Đăng ký"} thất bại`);
+      }
     } finally {
+      if (activeRequest.current === controller) activeRequest.current = null;
       setLoading(false);
     }
   }
@@ -53,11 +78,12 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
             {mode === "register" && (
-              <input type="text" placeholder="Họ tên" value={fullName} onChange={e => setFullName(e.target.value)} required className="app-input rounded-lg px-4 py-3" />
+              <input type="text" autoComplete="name" placeholder="Họ tên" value={fullName} onChange={e => setFullName(e.target.value)} minLength={2} maxLength={160} disabled={loading} required className="app-input rounded-lg px-4 py-3 disabled:opacity-60" />
             )}
-            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required className="app-input rounded-lg px-4 py-3" />
-            <input type="password" placeholder="Mật khẩu (tối thiểu 12 ký tự)" value={password} onChange={e => setPassword(e.target.value)} required className="app-input rounded-lg px-4 py-3" />
+            <input type="email" autoComplete="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} disabled={loading} required className="app-input rounded-lg px-4 py-3 disabled:opacity-60" />
+            <input type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Mật khẩu (tối thiểu 12 ký tự)" value={password} onChange={e => setPassword(e.target.value)} minLength={mode === "register" ? 12 : undefined} maxLength={128} disabled={loading} required className="app-input rounded-lg px-4 py-3 disabled:opacity-60" />
             {error && <p className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">{error}</p>}
+            {takingLonger && !error && <p className="text-center text-sm text-slate-400">Máy chủ miễn phí đang khởi động, vui lòng chờ thêm một chút…</p>}
             <button type="submit" disabled={loading} className="mt-2 inline-flex items-center justify-center gap-2 rainbow-btn">
               {loading ? "Đang xử lý..." : mode === "login" ? "Đăng nhập" : "Đăng ký"}
               <ArrowRight className="h-4 w-4" />
@@ -66,7 +92,7 @@ export default function LoginPage() {
 
           <p className="mt-5 text-center text-sm text-slate-400">
             {mode === "login" ? "Chưa có tài khoản? " : "Đã có tài khoản? "}
-            <button onClick={() => setMode(mode === "login" ? "register" : "login")} className="font-black rainbow-text">
+            <button type="button" onClick={() => { activeRequest.current?.abort(); setLoading(false); setMode(mode === "login" ? "register" : "login"); setError(""); setPassword(""); }} className="font-black rainbow-text">
               {mode === "login" ? "Đăng ký" : "Đăng nhập"}
             </button>
           </p>

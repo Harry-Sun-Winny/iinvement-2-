@@ -43,9 +43,12 @@ services:
       - "8080:8080"
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: https://investment-platform-sr64.onrender.com
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+      NEXT_PUBLIC_API_BASE_URL: https://investment-platform-sr64.onrender.com
     depends_on:
       - backend
     ports:
@@ -53,4 +56,3 @@ services:
 
 volumes:
   postgres_data:
-

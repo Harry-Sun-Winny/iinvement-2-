@@ -35,9 +35,45 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-async function fetchHistory(symbol: string, range: string) {
+interface FundamentalPoint {
+  date: string;
+  revenue: number | null;
+  ebitda: number | null;
+  netIncome: number | null;
+}
+
+async function fetchFundamentals(symbol: string): Promise<FundamentalPoint[]> {
+  const period1 = Math.floor(new Date("2000-01-01").getTime() / 1000);
+  const period2 = Math.floor(Date.now() / 1000) + 86_400;
+  const types = ["annualTotalRevenue", "annualEBITDA", "annualNetIncome"];
   const res = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&events=history`,
+    `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?symbol=${encodeURIComponent(symbol)}&type=${types.join(",")}&period1=${period1}&period2=${period2}`,
+    { headers: { "User-Agent": USER_AGENT, Accept: "application/json" }, next: { revalidate: 3600 } },
+  );
+  if (!res.ok) throw new Error(`Yahoo fundamentals ${res.status}`);
+
+  const data = await res.json();
+  const byDate = new Map<string, FundamentalPoint>();
+  for (const series of data.timeseries?.result ?? []) {
+    const type = series?.meta?.type?.[0] as string | undefined;
+    if (!type || !types.includes(type)) continue;
+    for (const value of series[type] ?? []) {
+      const date = value?.asOfDate as string | undefined;
+      const raw = finiteNumber(value?.reportedValue?.raw);
+      if (!date || raw == null) continue;
+      const point = byDate.get(date) ?? { date, revenue: null, ebitda: null, netIncome: null };
+      if (type === "annualTotalRevenue") point.revenue = raw;
+      if (type === "annualEBITDA") point.ebitda = raw;
+      if (type === "annualNetIncome") point.netIncome = raw;
+      byDate.set(date, point);
+    }
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function fetchYahooHistory(symbol: string, range: string, interval: "1d" | "1mo") {
+  const res = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&events=history`,
     { headers: { "User-Agent": USER_AGENT, Accept: "application/json" }, next: { revalidate: 300 } },
   );
   if (!res.ok) throw new Error(`Yahoo history ${res.status}`);
@@ -64,9 +100,31 @@ async function fetchHistory(symbol: string, range: string) {
     .filter(Boolean);
 
   return {
-    symbol,
     currency: result.meta?.currency || "USD",
     exchangeName: result.meta?.exchangeName,
+    points,
+  };
+}
+
+async function fetchHistory(symbol: string, range: string) {
+  if (range !== "max") {
+    const history = await fetchYahooHistory(symbol, range, "1d");
+    return { symbol, ...history };
+  }
+
+  const [longTerm, recent] = await Promise.all([
+    fetchYahooHistory(symbol, "max", "1mo"),
+    fetchYahooHistory(symbol, "5y", "1d"),
+  ]);
+  const recentStart = recent.points[0]?.date;
+  const points = recentStart
+    ? [...longTerm.points.filter(point => point && point.date < recentStart), ...recent.points]
+    : longTerm.points;
+
+  return {
+    symbol,
+    currency: recent.currency || longTerm.currency,
+    exchangeName: recent.exchangeName || longTerm.exchangeName,
     points,
   };
 }
@@ -82,7 +140,13 @@ export async function GET(req: NextRequest) {
   for (const candidate of getSymbolCandidates(symbol)) {
     try {
       const history = await fetchHistory(candidate, range);
-      return NextResponse.json({ ...history, requestedSymbol: symbol, resolvedSymbol: candidate });
+      let fundamentals: FundamentalPoint[] = [];
+      try {
+        fundamentals = await fetchFundamentals(candidate);
+      } catch {
+        fundamentals = [];
+      }
+      return NextResponse.json({ ...history, fundamentals, requestedSymbol: symbol, resolvedSymbol: candidate });
     } catch (error) {
       lastError = error;
     }

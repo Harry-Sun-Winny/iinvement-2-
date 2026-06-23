@@ -11,6 +11,10 @@ vi.mock("../app/portfolio/[id]/chart", () => ({
   default: () => <div data-testid="portfolio-chart" />,
 }));
 
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ id: "p1" }),
+}));
+
 vi.mock("../app/lib/api", () => ({
   getPortfolios: vi.fn(),
   getWatchlists: vi.fn(),
@@ -247,7 +251,7 @@ describe("portfolio transactions", () => {
       createdAt: "2026-06-16T00:00:00Z",
     });
 
-    const { container } = render(<PortfolioPage params={{ id: "p1" }} />);
+    const { container } = render(<PortfolioPage />);
 
     expect(await screen.findByText("INTEL")).toBeTruthy();
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/stock-price?symbol=INTC"));

@@ -17,6 +17,7 @@ import {
 import {
   BarChart3,
   Bot,
+  CalendarDays,
   Download,
   Eye,
   FilePlus,
@@ -370,8 +371,13 @@ export default function Page() {
       } catch {}
     }));
 
-    fetched.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
-    setNewsItems(fetched.slice(0, 20));
+    const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
+    const recentNews = fetched.filter(item => {
+      const publishedAt = new Date(item.publishedAt).getTime();
+      return Number.isFinite(publishedAt) && publishedAt >= twelveHoursAgo;
+    });
+    recentNews.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+    setNewsItems(recentNews.slice(0, 20));
     setNewsLoading(false);
   }
 
@@ -427,6 +433,10 @@ export default function Page() {
               <Button variant="ghost" className="w-full justify-start text-slate-400 hover:text-[#0abf53] transition-colors" onClick={() => (window.location.href = "/market")}>
                 <TrendingUp className="h-4 w-4" />
                 Market
+              </Button>
+              <Button variant="ghost" className="w-full justify-start text-slate-400 hover:text-cyan-300 transition-colors" onClick={() => (window.location.href = "/market-calendar")}>
+                <CalendarDays className="h-4 w-4" />
+                Market Calendar
               </Button>
               <Button variant="ghost" className="w-full justify-start text-slate-400 hover:text-[#c44dff] transition-colors" onClick={() => (window.location.href = "/analysis")}>
                 <Bot className="h-4 w-4" />

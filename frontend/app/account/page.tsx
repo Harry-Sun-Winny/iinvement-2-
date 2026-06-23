@@ -51,6 +51,7 @@ export default function AccountPage() {
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [emailOtpEnabled, setEmailOtpEnabled] = useState(false);
   const [totpEnabled, setTotpEnabled] = useState(false);
+  const [sessionStartedAt, setSessionStartedAt] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -59,6 +60,7 @@ export default function AccountPage() {
       return;
     }
     setEmail(readEmailFromJwt(token));
+    setSessionStartedAt(new Date().toISOString());
     setEmailOtpEnabled(localStorage.getItem("security.emailOtp") === "enabled");
     setTotpEnabled(localStorage.getItem("security.totp") === "enabled");
     loadAccountData();
@@ -124,12 +126,12 @@ export default function AccountPage() {
       {
         action: "Đăng nhập",
         detail: email ? `Phiên hiện tại cho ${email}` : "Phiên hiện tại",
-        time: new Date().toISOString(),
+        time: sessionStartedAt,
         severity: "success",
       },
       ...latestTx,
     ];
-  }, [email, transactions]);
+  }, [email, sessionStartedAt, transactions]);
 
   const interestedTopics = useMemo(() => {
     const symbols = [...new Set(transactions.map((tx) => tx.assetSymbol).filter(Boolean))].slice(0, 8);
@@ -315,7 +317,7 @@ export default function AccountPage() {
                       <p className="text-xs text-slate-500">{event.detail}</p>
                     </div>
                     <span className={event.severity === "success" ? "text-green-400 text-xs" : event.severity === "warn" ? "text-yellow-300 text-xs" : "text-slate-500 text-xs"}>
-                      {formatDate(event.time)}
+                      {event.time ? formatDate(event.time) : "—"}
                     </span>
                   </div>
                 ))}
@@ -489,7 +491,7 @@ function readEmailFromJwt(token: string) {
 
 function formatDate(value: string) {
   try {
-    return new Date(value).toLocaleString("vi-VN");
+    return new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
   } catch {
     return value;
   }

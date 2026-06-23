@@ -21,6 +21,7 @@ function getTrendTone(trend?: number | null) {
 
 function MetricCard({ label, value, sublabel, trend, loading }: MetricCardProps) {
   const TrendIcon = trend == null || !Number.isFinite(trend) ? Minus : trend >= 0 ? ArrowUpRight : ArrowDownRight;
+  const valueTone = value.trim().startsWith("-") ? "text-red-400" : "text-white";
 
   return (
     <Card className="border-white/10 bg-slate-950/55 shadow-none transition-colors hover:border-cyan-400/30">
@@ -31,7 +32,7 @@ function MetricCard({ label, value, sublabel, trend, loading }: MetricCardProps)
             {loading ? (
               <Skeleton className="mt-3 h-7 w-28 bg-white/10" />
             ) : (
-              <p className="mt-2 truncate text-xl font-semibold text-white">{value}</p>
+              <p className={`mt-2 truncate text-xl font-semibold ${valueTone}`}>{value}</p>
             )}
           </div>
           <Badge variant="outline" className={`shrink-0 border-white/10 bg-white/[0.03] ${getTrendTone(trend)}`}>

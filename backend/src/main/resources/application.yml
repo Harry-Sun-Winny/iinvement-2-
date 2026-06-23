@@ -21,7 +21,7 @@ spring:
 security:
   jwt:
     secret: ${SECURITY_JWT_SECRET:local-development-secret-change-before-production}
-    ttl-minutes: ${SECURITY_JWT_TTL_MINUTES:86400}
+    ttl-minutes: ${SECURITY_JWT_TTL_MINUTES:360}
 
 openai:
   api-key: ${OPENAI_API_KEY:}

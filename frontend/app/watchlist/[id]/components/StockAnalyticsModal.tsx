@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Skeleton } from "@/components/ui/skeleton";
 import FinancialSection, { FinancialMetric } from "./FinancialSection";
 import StockChart, { StockSeriesPoint } from "./StockChart";
+import { fetchIncomeStatement, fetchValuationMetrics, FmpIncomeStatement, FmpValuationMetrics } from "@/services/fmpService";
 
 interface AssetLike {
   assetSymbol: string;
@@ -38,6 +39,14 @@ interface HistoryPoint {
 interface HistoryData {
   currency?: string;
   points?: HistoryPoint[];
+  fundamentals?: FundamentalPoint[];
+}
+
+interface FundamentalPoint {
+  date: string;
+  revenue: number | null;
+  ebitda: number | null;
+  netIncome: number | null;
 }
 
 interface StockAnalyticsModalProps {
@@ -81,22 +90,28 @@ function movingAverage(values: number[], window: number, index: number) {
   return slice.reduce((sum, value) => sum + value, 0) / slice.length;
 }
 
-function buildSeries(history: HistoryPoint[], marketCap?: number): StockSeriesPoint[] {
+function buildSeries(history: HistoryPoint[], fundamentals: FundamentalPoint[], marketCap?: number): StockSeriesPoint[] {
   const valid = history.filter(point => point.adjustedClose != null || point.close != null);
   const prices = valid.map(point => point.adjustedClose ?? point.close ?? 0);
   const lastPrice = prices[prices.length - 1] || 0;
+  let fundamentalIndex = -1;
+  let currentFundamentals: FundamentalPoint | null = null;
 
   return valid.map((point, index) => {
     const adjustedPrice = prices[index];
+    while (fundamentalIndex + 1 < fundamentals.length && fundamentals[fundamentalIndex + 1].date <= point.date) {
+      fundamentalIndex += 1;
+      currentFundamentals = fundamentals[fundamentalIndex];
+    }
     return {
       date: point.date,
       price: adjustedPrice,
       volume: point.volume,
       ma50: movingAverage(prices, 50, index),
       ma200: movingAverage(prices, 200, index),
-      revenue: null,
-      ebitda: null,
-      netIncome: null,
+      revenue: currentFundamentals?.revenue ?? null,
+      ebitda: currentFundamentals?.ebitda ?? null,
+      netIncome: currentFundamentals?.netIncome ?? null,
       marketCap: marketCap && lastPrice > 0 ? marketCap * (adjustedPrice / lastPrice) : null,
     };
   });
@@ -110,6 +125,8 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [liveQuote, setLiveQuote] = useState<PriceData | undefined>(quote);
   const [history, setHistory] = useState<HistoryData | null>(null);
+  const [income, setIncome] = useState<FmpIncomeStatement | null>(null);
+  const [valuation, setValuation] = useState<FmpValuationMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -122,7 +139,7 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
       setLoading(true);
       setError("");
       try {
-        const [priceResult, profileResult, historyResult] = await Promise.allSettled([
+        const [priceResult, profileResult, historyResult, incomeResult, valuationResult] = await Promise.allSettled([
           fetch(`/api/stock-price?symbol=${encodeURIComponent(currentItem.assetSymbol)}`).then(res => {
             if (!res.ok) throw new Error("Price request failed");
             return res.json();
@@ -135,6 +152,8 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
             if (!res.ok) throw new Error("History request failed");
             return res.json();
           }),
+          fetchIncomeStatement(currentItem.assetSymbol),
+          fetchValuationMetrics(currentItem.assetSymbol),
         ]);
 
         if (cancelled) return;
@@ -142,7 +161,12 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
         if (profileResult.status === "fulfilled") setProfile(profileResult.value);
         if (historyResult.status === "fulfilled") setHistory(historyResult.value);
         else setHistory(null);
-        if (priceResult.status === "rejected" && profileResult.status === "rejected" && historyResult.status === "rejected") {
+        setIncome(incomeResult.status === "fulfilled" ? incomeResult.value : null);
+        setValuation(valuationResult.status === "fulfilled" ? valuationResult.value : null);
+        if (incomeResult.status === "rejected" && valuationResult.status === "rejected") {
+          const message = incomeResult.reason instanceof Error ? incomeResult.reason.message : "Unable to load FMP fundamentals.";
+          setError(message);
+        } else if (priceResult.status === "rejected" && profileResult.status === "rejected" && historyResult.status === "rejected") {
           setError("Unable to load stock analytics right now.");
         }
       } catch {
@@ -165,7 +189,10 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
   const currency = history?.currency || profile?.currency || "USD";
   const price = liveQuote?.price;
   const marketCap = profile?.marketCap ? profile.marketCap * 1_000_000 : undefined;
-  const chartData = useMemo(() => buildSeries(history?.points ?? [], marketCap), [history?.points, marketCap]);
+  const chartData = useMemo(
+    () => buildSeries(history?.points ?? [], history?.fundamentals ?? [], marketCap),
+    [history?.fundamentals, history?.points, marketCap],
+  );
   const latest = chartData[chartData.length - 1];
   const prior = chartData[Math.max(0, chartData.length - 22)];
   const monthlyTrend = latest?.price && prior?.price ? ((latest.price - prior.price) / prior.price) * 100 : null;
@@ -192,23 +219,23 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
       },
       {
         title: "Valuation Metrics",
-        description: "Enterprise and multiple analysis.",
+        description: "Enterprise and multiple analysis from Financial Modeling Prep.",
         metrics: [
-          metric("Enterprise Value (TEV)", "N/A", null, "Requires debt and cash data"),
-          metric("P/E Ratio", "N/A", null, "Requires earnings data"),
-          metric("Price/Sales (TTM)", "N/A", null, "Requires revenue data"),
-          metric("Price/Book", "N/A", null, "Requires book value data"),
-          metric("PEG Ratio", "N/A", null, "Requires growth estimates"),
+          metric("Enterprise Value (TEV)", compactMoney(valuation?.enterpriseValue, currency), null, "FMP key metrics"),
+          metric("P/E Ratio", formatRatio(valuation?.peRatio), null, "FMP key metrics"),
+          metric("Price/Sales (TTM)", formatRatio(valuation?.priceToSalesRatio), null, "FMP key metrics"),
+          metric("Price/Book", formatRatio(valuation?.pbRatio), null, "FMP key metrics"),
+          metric("PEG Ratio", formatRatio(valuation?.pegRatio), null, "FMP ratios"),
         ],
       },
       {
         title: "Income Statement",
-        description: "Revenue quality and profitability.",
+        description: "Latest revenue quality and profitability from Financial Modeling Prep.",
         metrics: [
-          metric("Revenue", "N/A", null, "Requires financial statements API"),
-          metric("Gross Profit", "N/A", null, "Requires financial statements API"),
-          metric("Net Income Available To Common Shareholders", "N/A", null, "Requires financial statements API"),
-          metric("EBITDA", "N/A", null, "Requires financial statements API"),
+          metric("Revenue", compactMoney(income?.revenue, currency), null, "Latest FMP income statement"),
+          metric("Gross Profit", compactMoney(income?.grossProfit, currency), null, "Latest FMP income statement"),
+          metric("Net Income Available To Common Shareholders", compactMoney(income?.netIncome, currency), null, "Latest FMP income statement"),
+          metric("EBITDA", compactMoney(income?.ebitda, currency), null, "Latest FMP income statement"),
         ],
       },
       {
@@ -243,7 +270,7 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
         metrics: [metric("Short Interest Ratio", formatRatio(null), null, "Requires short interest feed")],
       },
     ],
-    [currency, latest, liveQuote?.changePercent, marketCap, monthlyTrend, price],
+    [currency, income, latest, liveQuote?.changePercent, marketCap, monthlyTrend, price, valuation],
   );
 
   if (!item) return null;
@@ -318,7 +345,7 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
             <CardContent className="flex gap-3 p-4 text-sm text-amber-200">
               <LineChart className="mt-0.5 h-4 w-4 shrink-0" />
               <p>
-                Deep fundamentals such as TEV, P/E, EBITDA, debt, short interest and dividends are shown as N/A until a dedicated fundamentals API is connected. This keeps the UI honest while preserving the existing backend.
+                Income statement and valuation metrics are provided by Financial Modeling Prep. Unsupported fields remain N/A.
               </p>
             </CardContent>
           </Card>

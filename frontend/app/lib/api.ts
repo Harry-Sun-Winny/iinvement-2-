@@ -1,4 +1,6 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+const DEFAULT_TIMEOUT_MS = 30_000;
+const AUTH_TIMEOUT_MS = 180_000;
 
 function getToken() {
   if (typeof window === "undefined") return null;
@@ -18,25 +20,60 @@ export function isUnauthorizedError(error: unknown) {
   return error instanceof ApiError && error.status === 401;
 }
 
+function isAuthRequest(path: string) {
+  return path.startsWith("/api/v1/auth/");
+}
+
+function clearSessionAndRedirect() {
+  if (typeof window === "undefined") return;
+
+  localStorage.removeItem("token");
+  if (window.location.pathname !== "/login") {
+    window.location.replace("/login?reason=session-expired");
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
+  const authRequest = isAuthRequest(path);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    authRequest ? AUTH_TIMEOUT_MS : DEFAULT_TIMEOUT_MS,
+  );
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, controller.signal])
+    : controller.signal;
+  let res: Response;
+
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(!authRequest && token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch (error) {
+    if (options.signal?.aborted) {
+      throw new ApiError(499, "Yêu cầu đã được hủy.");
+    }
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError(408, "Máy chủ phản hồi quá lâu. Vui lòng thử lại sau vài giây.");
+    }
+    throw new ApiError(0, "Không thể kết nối máy chủ. Vui lòng kiểm tra mạng và thử lại.");
+  } finally {
+    window.clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const errorText = await getErrorText(res);
     const message = errorText || `${res.status} ${res.statusText}`;
-    if (res.status === 401) {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("token");
-      }
-      throw new ApiError(res.status, message);
+    if (res.status === 401 && !authRequest && token) {
+      clearSessionAndRedirect();
+      throw new ApiError(res.status, "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
     }
     throw new ApiError(res.status, message);
   }
@@ -55,16 +92,30 @@ async function getErrorText(res: Response) {
 }
 
 // Auth
-export const login = (email: string, password: string) =>
-  request<{ token: string; tokenType: string }>("/api/v1/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
+export async function login(email: string, password: string, signal?: AbortSignal) {
+  try {
+    return await request<{ token: string; tokenType: string }>("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      throw new ApiError(error.status, "Email hoặc mật khẩu không đúng");
+    }
+    throw error;
+  }
+}
 
-export const register = (email: string, password: string, fullName: string) =>
+export const register = (email: string, password: string, fullName: string, signal?: AbortSignal) =>
   request<{ token: string; tokenType: string }>("/api/v1/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, password, fullName }),
+    body: JSON.stringify({
+      email: email.trim().toLowerCase(),
+      password,
+      fullName: fullName.trim(),
+    }),
+    signal,
   });
 
 // Portfolios

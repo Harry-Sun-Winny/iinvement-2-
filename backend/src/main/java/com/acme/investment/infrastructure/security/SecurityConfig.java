@@ -35,15 +35,19 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                            JwtAuthenticationFilter jwtAuthenticationFilter,
+                                            CustomAuthenticationEntryPoint authenticationEntryPoint) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .headers(headers -> headers.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(
                      org.springframework.security.config.http.SessionCreationPolicy.STATELESS))
+                .exceptionHandling(handler -> handler
+                        .authenticationEntryPoint(authenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**", "/api/v1/admin/kpi", "/v3/api-docs/**", "/v3/api-docs.yaml", "/swagger-ui/**", "/swagger-ui.html", "/swagger-resources/**", "/webjars/**").permitAll()
+                        .requestMatchers("/error", "/api/v1/auth/**", "/api/v1/admin/kpi", "/v3/api-docs/**", "/v3/api-docs.yaml", "/swagger-ui/**", "/swagger-ui.html", "/swagger-resources/**", "/webjars/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
@@ -61,7 +65,7 @@ public class SecurityConfig {
 
     @Bean
     PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+        return new BCryptPasswordEncoder(10);
     }
 
     @Bean

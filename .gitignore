@@ -4,6 +4,8 @@ frontend/node_modules/
 mobile/.dart_tool/
 mobile/build/
 *.log
+*.tsbuildinfo
+*.code-workspace
+work/
 .env
 .env.*
-

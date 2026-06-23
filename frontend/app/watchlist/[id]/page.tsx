@@ -17,12 +17,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getWatchlistItems, addWatchlistItem, removeWatchlistItem, getStockPrice, WatchlistItem } from "../../lib/api";
 import StockAnalyticsModal from "./components/StockAnalyticsModal";
+import AnalyticsErrorBoundary from "./components/AnalyticsErrorBoundary";
 
 interface SearchResult { symbol: string; name: string; type: string; }
 interface PriceData { price: number; change: number; changePercent: number; }
@@ -48,6 +50,12 @@ function compactMoney(value?: number) {
   return `${sign}$${abs.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
+function formatPercent(value?: number | null) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "N/A";
+  return `${num >= 0 ? "+" : ""}${num.toFixed(2)}%`;
+}
+
 function classifyAsset(symbol: string, name = ""): AssetFilter {
   const text = `${symbol} ${name}`.toUpperCase();
   if (/(BTC|ETH|SOL|BNB|USDT|USDC|XRP|ADA|DOGE|CRYPTO)/.test(text)) return "CRYPTO";
@@ -65,6 +73,8 @@ export default function WatchlistPage() {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [addingSymbol, setAddingSymbol] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filter, setFilter] = useState<AssetFilter>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("changePercent");
@@ -102,32 +112,57 @@ export default function WatchlistPage() {
       const d = await getStockPrice(s);
       if (d) results[s] = d;
     }));
-    setPrices(results);
+    setPrices(prev => ({ ...prev, ...results }));
     setPriceLoading(false);
   }
 
   function handleSearchChange(val: string) {
     setQuery(val);
     setShowSuggestions(true);
+    setSearchError("");
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (val.length < 1) { setSuggestions([]); return; }
+    if (!val.trim()) { setSuggestions([]); setSearchLoading(false); return; }
+    searchTimeout.current = setTimeout(() => void searchAssets(val), 500);
+  }
+
+  async function searchAssets(value = query) {
+    const term = value.trim();
+    if (!term) return;
     setSearchLoading(true);
-    searchTimeout.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/stock-search?q=${encodeURIComponent(val)}`);
-        setSuggestions(await res.json());
-      } catch { setSuggestions([]); }
+    setSearchError("");
+    setShowSuggestions(true);
+    try {
+      const res = await fetch(`/api/stock-search?q=${encodeURIComponent(term)}`);
+      if (!res.ok) throw new Error("Search request failed");
+      const data = await res.json();
+      const results = Array.isArray(data) ? data : [];
+      setSuggestions(results);
+      if (results.length === 0) setSearchError("No matching assets found.");
+    } catch {
+      setSuggestions([]);
+      setSearchError("Unable to search assets. Please try again.");
+    } finally {
       setSearchLoading(false);
-    }, 300);
+    }
   }
 
   async function handleAdd(s: SearchResult) {
-    setQuery(""); setSuggestions([]); setShowSuggestions(false);
+    if (items.some(item => item.assetSymbol === s.symbol)) {
+      setSearchError(`${s.symbol} is already in this watchlist.`);
+      return;
+    }
+    setAddingSymbol(s.symbol);
+    setError("");
     try {
       const item = await addWatchlistItem(id, s.symbol, s.name);
       setItems(prev => [...prev, item]);
-      fetchPrices([s.symbol]);
-    } catch (e: any) { setError(e.message); }
+      setQuery(""); setSuggestions([]); setShowSuggestions(false); setSearchError("");
+      void fetchPrices([s.symbol]);
+    } catch (e: any) {
+      setSearchError(e?.message || `Unable to add ${s.symbol}.`);
+    } finally {
+      setAddingSymbol("");
+    }
   }
 
   async function handleRemove(symbol: string) {
@@ -153,11 +188,14 @@ export default function WatchlistPage() {
   const priced = items.map(item => prices[item.assetSymbol]).filter(Boolean);
   const gainers = priced.filter(price => price.change >= 0);
   const losers = priced.filter(price => price.change < 0);
-  const averageChange = priced.length ? priced.reduce((sum, price) => sum + price.changePercent, 0) / priced.length : 0;
+  const validChanges = priced.map(price => Number(price.changePercent)).filter(Number.isFinite);
+  const averageChange = validChanges.length ? validChanges.reduce((sum, change) => sum + change, 0) / validChanges.length : 0;
   const best = items.reduce<{ symbol: string; change: number } | null>((acc, item) => {
     const price = prices[item.assetSymbol];
-    if (!price) return acc;
-    if (!acc || price.changePercent > acc.change) return { symbol: item.assetSymbol, change: price.changePercent };
+    const raw = price?.changePercent;
+    const change = Number(raw);
+    if (!Number.isFinite(change)) return acc;
+    if (!acc || change > acc.change) return { symbol: item.assetSymbol, change };
     return acc;
   }, null);
 
@@ -217,8 +255,8 @@ export default function WatchlistPage() {
               { label: "Total Assets", value: items.length.toLocaleString(), icon: Eye, tone: "text-white" },
               { label: "Assets Up Today", value: gainers.length.toLocaleString(), icon: TrendingUp, tone: "text-emerald-400" },
               { label: "Assets Down Today", value: losers.length.toLocaleString(), icon: TrendingDown, tone: "text-red-400" },
-              { label: "Average Daily Change", value: `${averageChange >= 0 ? "+" : ""}${averageChange.toFixed(2)}%`, icon: Activity, tone: averageChange >= 0 ? "text-emerald-400" : "text-red-400" },
-              { label: "Best Performer", value: best ? `${best.symbol} ${best.change >= 0 ? "+" : ""}${best.change.toFixed(2)}%` : "N/A", icon: TrendingUp, tone: "text-emerald-400" },
+              { label: "Average Daily Change", value: formatPercent(averageChange), icon: Activity, tone: averageChange >= 0 ? "text-emerald-400" : "text-red-400" },
+              { label: "Best Performer", value: best ? `${best.symbol} ${formatPercent(best.change)}` : "N/A", icon: TrendingUp, tone: "text-emerald-400" },
             ].map((card, index) => (
               <motion.div key={card.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.04 }} whileHover={{ y: -3 }}>
                 <Card className="h-full border-white/10 bg-white/[0.035]">
@@ -242,32 +280,51 @@ export default function WatchlistPage() {
               <CardDescription>Search by ticker or company name.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="relative" ref={suggestRef}>
-                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" />
-                <input
-                  value={query}
-                  onChange={e => handleSearchChange(e.target.value)}
-                  onFocus={() => query && setShowSuggestions(true)}
-                  placeholder="Search AAPL, NVDA, BTC..."
-                  className="h-10 w-full rounded-lg border border-white/10 bg-slate-950/80 pl-10 pr-3 text-sm text-white outline-none transition-colors placeholder:text-slate-600 focus:border-cyan-400/50"
-                />
+              <div ref={suggestRef}>
+                <form
+                  className="flex flex-col gap-3 sm:flex-row"
+                  onSubmit={event => {
+                    event.preventDefault();
+                    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+                    void searchAssets();
+                  }}
+                >
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                    <Input
+                      value={query}
+                      onChange={event => handleSearchChange(event.target.value)}
+                      onFocus={() => query && setShowSuggestions(true)}
+                      placeholder="Search AAPL, Samsung, Bitcoin..."
+                      className="border-white/10 bg-slate-950/80 pl-10 text-white placeholder:text-slate-600"
+                    />
+                  </div>
+                  <Button type="submit" disabled={!query.trim() || searchLoading} className="sm:min-w-28">
+                    <Search className={`h-4 w-4 ${searchLoading ? "animate-pulse" : ""}`} />
+                    {searchLoading ? "Searching" : "Search"}
+                  </Button>
+                </form>
                 <AnimatePresence>
-                  {showSuggestions && (suggestions.length > 0 || searchLoading) && (
-                    <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-white/10 bg-slate-950 shadow-2xl">
+                  {showSuggestions && (suggestions.length > 0 || searchLoading || searchError) && (
+                    <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-slate-950/80">
                       {searchLoading && (
                         <div className="space-y-2 p-3">
                           <Skeleton className="h-8 bg-white/10" />
                           <Skeleton className="h-8 bg-white/10" />
                         </div>
                       )}
+                      {!searchLoading && searchError && <p className="px-4 py-3 text-sm text-amber-300">{searchError}</p>}
                       {suggestions.map(s => (
-                        <button key={s.symbol} onMouseDown={() => handleAdd(s)} className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/[0.04]">
+                        <div key={s.symbol} className="flex items-center justify-between gap-4 border-t border-white/[0.06] px-4 py-3 first:border-t-0 hover:bg-white/[0.04]">
                           <span>
                             <span className="font-semibold text-white">{s.symbol}</span>
                             <span className="ml-3 text-sm text-slate-400">{s.name}</span>
                           </span>
-                          <Badge className="bg-cyan-500/15 text-cyan-300"><Plus className="mr-1 h-3 w-3" />Add</Badge>
-                        </button>
+                          <Button type="button" size="sm" variant="outline" disabled={addingSymbol === s.symbol} onClick={() => void handleAdd(s)}>
+                            <Plus className="h-3.5 w-3.5" />
+                            {addingSymbol === s.symbol ? "Adding" : "Add"}
+                          </Button>
+                        </div>
                       ))}
                     </motion.div>
                   )}
@@ -338,7 +395,7 @@ export default function WatchlistPage() {
                             <TableCell className="text-right">
                               {data ? (
                                 <Badge variant={up ? "default" : "destructive"} className={up ? "bg-emerald-500/15 text-emerald-300" : ""}>
-                                  {data.changePercent >= 0 ? "+" : ""}{data.changePercent.toFixed(2)}%
+                                  {formatPercent(data.changePercent)}
                                 </Badge>
                               ) : "N/A"}
                             </TableCell>
@@ -368,14 +425,16 @@ export default function WatchlistPage() {
           </Card>
         </div>
       </main>
-      <StockAnalyticsModal
-        item={selectedAsset}
-        quote={selectedAsset ? prices[selectedAsset.assetSymbol] : undefined}
-        open={Boolean(selectedAsset)}
-        onOpenChange={open => {
-          if (!open) setSelectedAsset(null);
-        }}
-      />
+      <AnalyticsErrorBoundary>
+        <StockAnalyticsModal
+          item={selectedAsset}
+          quote={selectedAsset ? prices[selectedAsset.assetSymbol] : undefined}
+          open={Boolean(selectedAsset)}
+          onOpenChange={open => {
+            if (!open) setSelectedAsset(null);
+          }}
+        />
+      </AnalyticsErrorBoundary>
     </div>
   );
 }

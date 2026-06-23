@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ArrowRight, TrendingUp } from "lucide-react";
+import { register } from "../lib/api";
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
@@ -10,26 +11,20 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleRegister() {
-    if (!username || !email || !password) {
-      setError("Vui lòng điền đầy đủ");
-      return;
-    }
+  async function handleRegister(event: React.FormEvent) {
+    event.preventDefault();
+    if (loading) return;
+    setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/backend/v1/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName: username, email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Đăng ký thất bại");
+      const data = await register(email, password, username);
       localStorage.setItem("token", data.token);
       window.location.href = "/";
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Đăng ký thất bại");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   return (
@@ -52,18 +47,18 @@ export default function RegisterPage() {
           <p className="text-sm font-bold text-[#54a0ff]">New account</p>
           <h1 className="mt-2 text-3xl font-black rainbow-text">Đăng ký</h1>
           {error && <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">{error}</div>}
-          <div className="mt-8 flex flex-col gap-4">
-            <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" className="app-input rounded-lg px-4 py-3" />
-            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" className="app-input rounded-lg px-4 py-3" />
-            <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Mật khẩu" type="password" className="app-input rounded-lg px-4 py-3" />
-            <button onClick={handleRegister} disabled={loading} className="inline-flex items-center justify-center gap-2 rainbow-btn w-full">
+          <form onSubmit={handleRegister} className="mt-8 flex flex-col gap-4">
+            <input value={username} onChange={e => setUsername(e.target.value)} autoComplete="name" placeholder="Họ tên" minLength={2} maxLength={160} disabled={loading} required className="app-input rounded-lg px-4 py-3 disabled:opacity-60" />
+            <input value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" placeholder="Email" type="email" disabled={loading} required className="app-input rounded-lg px-4 py-3 disabled:opacity-60" />
+            <input value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" placeholder="Mật khẩu (tối thiểu 12 ký tự)" type="password" minLength={12} maxLength={128} disabled={loading} required className="app-input rounded-lg px-4 py-3 disabled:opacity-60" />
+            <button type="submit" disabled={loading} className="inline-flex items-center justify-center gap-2 rainbow-btn w-full">
               {loading ? "Đang đăng ký..." : "Đăng ký"}
               <ArrowRight className="h-4 w-4" />
             </button>
             <p className="text-center text-sm text-slate-400">
               Đã có tài khoản? <a href="/login" className="font-black rainbow-text">Đăng nhập</a>
             </p>
-          </div>
+          </form>
         </section>
       </div>
     </main>

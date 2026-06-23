@@ -8,5 +8,5 @@ FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/investment-platform-0.1.0.jar app.jar
 EXPOSE 10000
-ENTRYPOINT ["sh", "-c", "export SPRING_DATASOURCE_URL=\"jdbc:postgresql://$(printf '%s' \"$SPRING_DATASOURCE_URL\" | sed -E 's|^[^:]+://[^@]+@||')\"; exec java -jar app.jar"]
+ENTRYPOINT ["sh", "-c", "case \"$SPRING_DATASOURCE_URL\" in jdbc:postgresql://*) ;; *) export SPRING_DATASOURCE_URL=\"jdbc:postgresql://$(printf '%s' \"$SPRING_DATASOURCE_URL\" | sed -E 's|^[^:]+://([^@]+@)?||')\" ;; esac; exec java -jar app.jar"]
 

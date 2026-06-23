@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import { getTransactions, createTransaction, updateTransaction, deleteTransaction, Transaction, CreateTransactionDto, isUnauthorizedError } from "../../lib/api";
 import PortfolioChart from "./chart";
@@ -17,6 +17,56 @@ function getPriceSymbol(symbol: string) {
   return PRICE_SYMBOL_ALIASES[normalized] ?? normalized;
 }
 
+interface RealizedPnlResult {
+  avgCost: number;
+  pnl: number;
+  pnlPct: number;
+}
+
+function normalizeType(value: string) {
+  return value?.toUpperCase().trim();
+}
+
+function computeAllRealizedPnl(transactions: Transaction[]) {
+  const ordered = [...transactions].sort((a, b) => {
+    const dateA = new Date(a.transactionDate).getTime();
+    const dateB = new Date(b.transactionDate).getTime();
+    if (dateA !== dateB) return dateA - dateB;
+    return new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
+  });
+  const positions = new Map<string, { qty: number; cost: number }>();
+  const result = new Map<string, RealizedPnlResult>();
+
+  for (const transaction of ordered) {
+    const symbol = transaction.assetSymbol.toUpperCase();
+    const position = positions.get(symbol) ?? { qty: 0, cost: 0 };
+    const side = normalizeType(transaction.type);
+
+    if (side === "BUY") {
+      position.qty += transaction.quantity;
+      position.cost += transaction.quantity * transaction.price;
+    } else if (side === "SELL") {
+      if (position.qty > 0 && position.cost > 0) {
+        const avgCost = position.cost / position.qty;
+        const pnl = (transaction.price - avgCost) * transaction.quantity;
+        const pnlPct = avgCost > 0 ? ((transaction.price - avgCost) / avgCost) * 100 : 0;
+        result.set(transaction.id, { avgCost, pnl, pnlPct });
+      }
+
+      if (position.qty > 0) {
+        const avgCost = position.cost / position.qty;
+        const soldQty = Math.min(transaction.quantity, position.qty);
+        position.qty -= soldQty;
+        position.cost = Math.max(0, position.cost - soldQty * avgCost);
+      }
+    }
+
+    positions.set(symbol, position);
+  }
+
+  return result;
+}
+
 export default function PortfolioPage() {
   const routeParams = useParams<{ id?: string }>() ?? {};
   const id = routeParams.id ?? "";
@@ -24,6 +74,7 @@ export default function PortfolioPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
@@ -33,6 +84,9 @@ export default function PortfolioPage() {
   const [quantity, setQuantity] = useState("");
   const [price, setPrice] = useState("");
   const [currency, setCurrency] = useState("USD");
+  const [swapTargetSymbol, setSwapTargetSymbol] = useState("");
+  const [swapTargetQuantity, setSwapTargetQuantity] = useState("");
+  const [swapTargetPrice, setSwapTargetPrice] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
@@ -147,8 +201,10 @@ export default function PortfolioPage() {
     return transactions.reduce((qty, t) => {
       if (editingTx && t.id === editingTx.id) return qty;
       if (t.assetSymbol.toUpperCase() !== assetSymbol.toUpperCase()) return qty;
-      if (normalizeType(t.type) === "BUY") return qty + t.quantity;
-      if (normalizeType(t.type) === "SELL") return qty - t.quantity;
+      const side = normalizeType(t.type);
+      if (side === "BUY") return qty + t.quantity;
+      if (side === "SELL") return qty - t.quantity;
+      if (side === "STAKE") return qty - t.quantity; // staked amount locked from selling
       return qty;
     }, 0);
   }
@@ -168,6 +224,11 @@ export default function PortfolioPage() {
   }
 
   async function handleSubmit() {
+    if (isSubmitting) return;
+    if (!date) {
+      setError("Vui lòng chọn ngày giao dịch");
+      return;
+    }
     if (!symbol || !quantity || !price) { setError("Vui lòng điền đầy đủ thông tin"); return; }
     
     const normalizedType = type.toUpperCase();
@@ -184,12 +245,51 @@ export default function PortfolioPage() {
       }
     }
     
+    // For SWAP, create two transactions: SELL source and BUY target, to keep ledger consistent.
+    if (normalizedType === "SWAP") {
+      if (!swapTargetSymbol || !swapTargetQuantity || !swapTargetPrice) {
+        setError("Vui lòng điền đầy đủ thông tin SWAP (mã đích, số lượng, giá)");
+        return;
+      }
+      const sellDto: CreateTransactionDto = {
+        assetSymbol: symbol,
+        assetName: assetName || symbol,
+        type: "SELL",
+        quantity: qty,
+        price: Number(price),
+        currency,
+        transactionDate: date,
+        notes: `SWAP → ${swapTargetSymbol}` + (notes ? ` | ${notes}` : ""),
+      };
+      const buyDto: CreateTransactionDto = {
+        assetSymbol: swapTargetSymbol,
+        assetName: swapTargetSymbol,
+        type: "BUY",
+        quantity: Number(swapTargetQuantity),
+        price: Number(swapTargetPrice),
+        currency: currency, // assume same currency for simplicity
+        transactionDate: date,
+        notes: `SWAP from ${symbol}`,
+      };
+      try {
+        const sellTx = await createTransaction(id, sellDto);
+        const buyTx = await createTransaction(id, buyDto);
+        setTransactions(prev => [buyTx, sellTx, ...prev]);
+        resetForm();
+      } catch (e: any) {
+        if (!handleApiError(e)) setError(e.message || "Lỗi khi lưu giao dịch swap");
+      }
+      return;
+    }
+
     const dto: CreateTransactionDto = {
       assetSymbol: symbol, assetName: assetName || symbol,
       type: normalizedType, quantity: qty, price: Number(price),
       currency, transactionDate: date, notes,
     };
     const token = localStorage.getItem("token");
+    setError("");
+    setIsSubmitting(true);
     try {
       if (editingTx) {
         // UPDATE
@@ -203,6 +303,8 @@ export default function PortfolioPage() {
       resetForm();
     } catch (e: any) {
       if (!handleApiError(e)) setError(e.message || "Lỗi khi lưu giao dịch");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -217,7 +319,6 @@ export default function PortfolioPage() {
   }
 
   const [currentPrices, setCurrentPrices] = useState<Record<string, number>>({});
-  const normalizeType = (value: string) => value?.toUpperCase().trim();
 
   const formatCurrencyValue = (value: number, code: string) => {
     if (!Number.isFinite(value)) return String(value);
@@ -229,113 +330,142 @@ export default function PortfolioPage() {
     }
   };
 
-  const totalBuy = transactions.filter(t => normalizeType(t.type) === "BUY").reduce((s, t) => s + t.quantity * t.price, 0);
-  const totalSell = transactions.filter(t => normalizeType(t.type) === "SELL").reduce((s, t) => s + t.quantity * t.price, 0);
-  const portfolioNetValue = totalBuy - totalSell;
+  const realizedPnlByTransaction = useMemo(
+    () => computeAllRealizedPnl(transactions),
+    [transactions],
+  );
 
-  function getAssetHoldings(assetSymbol: string) {
-    let qty = 0;
-    for (const t of transactions) {
-      if (t.assetSymbol.toUpperCase() !== assetSymbol.toUpperCase()) continue;
-      if (normalizeType(t.type) === "BUY") qty += t.quantity;
-      else if (normalizeType(t.type) === "SELL") qty -= t.quantity;
-    }
-    return qty;
-  }
+  const portfolioSummary = useMemo(() => {
+    const totalsByCurrency: Record<string, { buy: number; sell: number }> = {};
+    const realizedByCurrency: Record<string, number> = {};
+    const aggregatesBySymbol = new Map<string, { holdings: number; buyCost: number }>();
+    const symbols = new Set<string>();
+    const unrealizedPnlByTransaction = new Map<string, RealizedPnlResult>();
+    let totalRealizedSellPnl = 0;
 
-  function getSellRealizedPnl(tx: Transaction) {
-    if (normalizeType(tx.type) !== "SELL") return null;
+    for (const transaction of transactions) {
+      const currencyCode = transaction.currency || "USD";
+      const totals = totalsByCurrency[currencyCode] ?? { buy: 0, sell: 0 };
+      const side = normalizeType(transaction.type);
+      const transactionValue = transaction.quantity * transaction.price;
+      const normalizedSymbol = transaction.assetSymbol.toUpperCase();
+      const aggregate = aggregatesBySymbol.get(normalizedSymbol) ?? { holdings: 0, buyCost: 0 };
+      symbols.add(transaction.assetSymbol);
 
-    let qty = 0;
-    let cost = 0;
-    const symbol = tx.assetSymbol.toUpperCase();
-    const ordered = [...transactions].sort((a, b) => {
-      const dateA = new Date(a.transactionDate).getTime();
-      const dateB = new Date(b.transactionDate).getTime();
-      if (dateA !== dateB) return dateA - dateB;
-      return new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
-    });
+      if (side === "BUY") {
+        totals.buy += transactionValue;
+        aggregate.holdings += transaction.quantity;
+        aggregate.buyCost += transactionValue;
 
-    for (const item of ordered) {
-      if (item.id === tx.id) break;
-      if (item.assetSymbol.toUpperCase() !== symbol) continue;
-
-      if (normalizeType(item.type) === "BUY") {
-        qty += item.quantity;
-        cost += item.quantity * item.price;
-      } else if (normalizeType(item.type) === "SELL" && qty > 0) {
-        const avgCost = cost / qty;
-        const soldQty = Math.min(item.quantity, qty);
-        qty -= soldQty;
-        cost = Math.max(0, cost - soldQty * avgCost);
-      }
-    }
-
-    if (qty <= 0 || cost <= 0) return null;
-    const avgCost = cost / qty;
-    const pnl = (tx.price - avgCost) * tx.quantity;
-    const pnlPct = avgCost > 0 ? ((tx.price - avgCost) / avgCost) * 100 : 0;
-    return { avgCost, pnl, pnlPct };
-  }
-
-  function getTotalRealizedSellPnl() {
-    return transactions.reduce((sum, tx) => {
-      const realized = getSellRealizedPnl(tx);
-      return sum + (realized?.pnl ?? 0);
-    }, 0);
-  }
-
-  function calculatePortfolioPnL() {
-    let totalCostBasis = 0;
-    let totalMarketValue = 0;
-
-    const symbols = [...new Set(transactions.map(t => t.assetSymbol))];
-    
-    for (const sym of symbols) {
-      // Calculate cost basis and current holdings
-      let costBasis = 0;
-      let holdings = 0;
-      
-      for (const t of transactions) {
-        if (t.assetSymbol.toUpperCase() !== sym.toUpperCase()) continue;
-        if (normalizeType(t.type) === "BUY") {
-          costBasis += t.quantity * t.price;
-          holdings += t.quantity;
-        } else if (normalizeType(t.type) === "SELL") {
-          holdings -= t.quantity;
+        const currentPrice = currentPrices[transaction.assetSymbol];
+        if (currentPrice) {
+          const pnl = transaction.quantity * currentPrice - transactionValue;
+          unrealizedPnlByTransaction.set(transaction.id, {
+            avgCost: transaction.price,
+            pnl,
+            pnlPct: (pnl / transactionValue) * 100,
+          });
+        }
+      } else if (side === "SELL") {
+        totals.sell += transactionValue;
+        aggregate.holdings -= transaction.quantity;
+        const realized = realizedPnlByTransaction.get(transaction.id);
+        if (realized) {
+          realizedByCurrency[currencyCode] = (realizedByCurrency[currencyCode] ?? 0) + realized.pnl;
+          totalRealizedSellPnl += realized.pnl;
         }
       }
-      
-      totalCostBasis += costBasis;
-      
-      // Calculate market value for current holdings
-      if (holdings > 0 && currentPrices[sym]) {
-        totalMarketValue += holdings * currentPrices[sym];
+
+      totalsByCurrency[currencyCode] = totals;
+      aggregatesBySymbol.set(normalizedSymbol, aggregate);
+    }
+
+    let totalCostBasis = 0;
+    let totalMarketValue = 0;
+    for (const symbol of symbols) {
+      const aggregate = aggregatesBySymbol.get(symbol.toUpperCase());
+      if (!aggregate) continue;
+      totalCostBasis += aggregate.buyCost;
+      if (aggregate.holdings > 0 && currentPrices[symbol]) {
+        totalMarketValue += aggregate.holdings * currentPrices[symbol];
       }
     }
 
     const pnl = totalMarketValue - totalCostBasis;
-    const pnlPct = totalCostBasis > 0 ? (pnl / totalCostBasis) * 100 : 0;
-
-    return { pnl, pnlPct, totalCostBasis, totalMarketValue };
-  }
+    return {
+      transactionCount: transactions.length,
+      totalsByCurrency,
+      realizedByCurrency,
+      totalRealizedSellPnl,
+      totalCostBasis,
+      totalMarketValue,
+      pnl,
+      pnlPct: totalCostBasis > 0 ? (pnl / totalCostBasis) * 100 : 0,
+      unrealizedPnlByTransaction,
+    };
+  }, [transactions, currentPrices, realizedPnlByTransaction]);
 
   useEffect(() => {
     if (transactions.length === 0) return;
+    const controller = new AbortController();
     const symbols = [...new Set(transactions.map(t => t.assetSymbol))];
     symbols.forEach(async sym => {
       try {
-        const res = await fetch(`/api/stock-price?symbol=${encodeURIComponent(getPriceSymbol(sym))}`);
+        const res = await fetch(`/api/stock-price?symbol=${encodeURIComponent(getPriceSymbol(sym))}`, {
+          signal: controller.signal,
+        });
         const d = await res.json();
-        if (d.price) setCurrentPrices(prev => ({ ...prev, [sym]: d.price }));
-      } catch {}
+        if (!controller.signal.aborted && d.price) {
+          setCurrentPrices(prev => ({ ...prev, [sym]: d.price }));
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        // Keep the existing silent failure behavior for price lookups.
+      }
     });
+    return () => controller.abort();
   }, [transactions]);
   
 
   function getSector(symbol: string) {
   return sectors[symbol] ?? SECTOR_MAP[symbol.toUpperCase()] ?? SECTOR_MAP[symbol] ?? "Khác";
 }
+
+  function renderTransactionPnl(transaction: Transaction) {
+    const side = normalizeType(transaction.type);
+    if (side === "BUY") {
+      const unrealized = portfolioSummary.unrealizedPnlByTransaction.get(transaction.id);
+      if (!unrealized) return <span className="text-slate-600 text-xs">Đang tải...</span>;
+      return (
+        <span className={`font-semibold text-xs ${unrealized.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+          {unrealized.pnl >= 0 ? "▲" : "▼"} {unrealized.pnl >= 0 ? "+" : ""}{unrealized.pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })} ({unrealized.pnlPct.toFixed(1)}%)
+        </span>
+      );
+    }
+
+    if (side === "SELL") {
+      const realized = realizedPnlByTransaction.get(transaction.id);
+      if (!realized) return <span className="text-slate-600 text-xs">Thiếu giá vốn</span>;
+      const isProfit = realized.pnl >= 0;
+      return (
+        <div className="text-right">
+          <span className={`font-semibold text-xs ${isProfit ? "text-green-400" : "text-red-400"}`}>
+            {isProfit ? "▲ +" : "▼ "}{formatCurrencyValue(realized.pnl, transaction.currency)} ({realized.pnlPct.toFixed(1)}%)
+          </span>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Giá vốn {formatCurrencyValue(realized.avgCost, transaction.currency)}
+          </p>
+        </div>
+      );
+    }
+
+    // SWAP/STAKE và các loại khác chưa hỗ trợ tính P&L
+    return (
+      <span className="text-slate-500 text-[11px] leading-tight block text-right">
+        {"Chưa hỗ trợ tính P&L cho loại này"}
+      </span>
+    );
+  }
 
   return (
     <div className="app-shell flex">
@@ -361,69 +491,57 @@ export default function PortfolioPage() {
             </div>
           </div>
 
-          <div className="hidden">
+          <div className="grid gap-4 mb-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <p className="text-slate-500 text-xs mb-1">Tổng giao dịch</p>
-              <p className="text-2xl font-bold text-blue-400">{transactions.length}</p>
+              <p className="text-2xl font-bold text-blue-400">{portfolioSummary.transactionCount}</p>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <p className="text-slate-500 text-xs mb-1">Chi phí mua</p>
-              <p className="text-2xl font-bold text-green-400">${totalBuy.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+              <div className="text-2xl font-bold text-green-400 space-y-1">
+                {Object.entries(portfolioSummary.totalsByCurrency).length === 0 && <div>{formatCurrencyValue(0, "USD")}</div>}
+                {Object.entries(portfolioSummary.totalsByCurrency).map(([cur, value]) => (
+                  <div key={cur}>{formatCurrencyValue(value.buy, cur)}</div>
+                ))}
+              </div>
               <p className="text-xs text-slate-500 mt-1">Tiền bôi ra</p>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <p className="text-slate-500 text-xs mb-1">Tổng bán</p>
-              <p className="text-xl font-bold text-red-400 break-words leading-tight">
-                {formatCurrencyValue(totalSell, "USD")}
-              </p>
-              {(() => {
-                const realizedSellPnl = getTotalRealizedSellPnl();
-                const isProfit = realizedSellPnl >= 0;
-                return (
-                  <p className={`text-xs mt-2 font-semibold ${isProfit ? "text-green-400" : "text-red-400"}`}>
-                    Lãi đã chốt: {isProfit ? "+" : ""}{formatCurrencyValue(realizedSellPnl, "USD")}
-                  </p>
-                );
-              })()}
+              <div className="text-xl font-bold text-red-400 break-words leading-tight space-y-1">
+                {Object.entries(portfolioSummary.totalsByCurrency).length === 0 && <div>{formatCurrencyValue(0, "USD")}</div>}
+                {Object.entries(portfolioSummary.totalsByCurrency).map(([cur, value]) => (
+                  <div key={cur}>{formatCurrencyValue(value.sell, cur)}</div>
+                ))}
+              </div>
+              <div className="text-xs mt-2 font-semibold">
+                {Object.entries(portfolioSummary.realizedByCurrency).map(([cur, value]) => {
+                  const isProfit = value >= 0;
+                  return (
+                    <p key={cur} className={`${isProfit ? "text-green-400" : "text-red-400"}`}>
+                      Lãi đã chốt ({cur}): {isProfit ? "+" : ""}{formatCurrencyValue(value, cur)}
+                    </p>
+                  );
+                })}
+              </div>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <p className="text-slate-500 text-xs mb-1">Giá trị hiện tại</p>
-              <p className="text-2xl font-bold text-cyan-400">${(() => {
-                let marketValue = 0;
-                const symbols = [...new Set(transactions.map(t => t.assetSymbol))];
-                for (const sym of symbols) {
-                  let holdings = 0;
-                  for (const t of transactions) {
-                    if (t.assetSymbol.toUpperCase() !== sym.toUpperCase()) continue;
-                    if (normalizeType(t.type) === "BUY") holdings += t.quantity;
-                    else if (normalizeType(t.type) === "SELL") holdings -= t.quantity;
-                  }
-                  if (holdings > 0 && currentPrices[sym]) {
-                    marketValue += holdings * currentPrices[sym];
-                  }
-                }
-                return marketValue.toLocaleString(undefined, { maximumFractionDigits: 0 });
-              })()}</p>
+              <p className="text-2xl font-bold text-cyan-400">{portfolioSummary.totalMarketValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
               <p className="text-xs text-slate-500 mt-1">Cổ phiếu còn nắm</p>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <p className="text-slate-500 text-xs mb-1">Lợi nhuận/Lỗ</p>
-              {(() => {
-                const { pnl, pnlPct } = calculatePortfolioPnL();
-                return (
-                  <>
-                    <p className={`text-2xl font-bold ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {pnl >= 0 ? "▲ +" : "▼ "}{pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                    </p>
-                    <p className={`text-xs mt-1 ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>({pnlPct.toFixed(1)}%)</p>
-                  </>
-                );
-              })()}
+              <p className={`text-2xl font-bold ${portfolioSummary.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {portfolioSummary.pnl >= 0 ? "▲ +" : "▼ "}{portfolioSummary.pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </p>
+              <p className={`text-xs mt-1 ${portfolioSummary.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>({portfolioSummary.pnlPct.toFixed(1)}%)</p>
             </div>
           </div>
 
           {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{error}</div>}
-               <PortfolioChart transactions={transactions} currentPrices={currentPrices} />
+          <PortfolioChart transactions={transactions} currentPrices={currentPrices} />
+
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold">Lịch sử giao dịch</h3>
             <button onClick={() => showForm && !editingTx ? resetForm() : setShowForm(!showForm)}
@@ -505,10 +623,29 @@ export default function PortfolioPage() {
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
                 </div>
               </div>
+                {normalizeType(type) === "SWAP" && (
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <label className="text-xs text-slate-500 mb-1 block">Mã đích (to) *</label>
+                      <input value={swapTargetSymbol} onChange={e => setSwapTargetSymbol(e.target.value.toUpperCase())} placeholder="VD: MSFT"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 mb-1 block">Số lượng đích *</label>
+                      <input type="number" value={swapTargetQuantity} onChange={e => setSwapTargetQuantity(e.target.value)} placeholder="10"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 mb-1 block">Giá đích *</label>
+                      <input type="number" value={swapTargetPrice} onChange={e => setSwapTargetPrice(e.target.value)} placeholder="150.00"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                    </div>
+                  </div>
+                )}
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="text-xs text-slate-500 mb-1 block">Ngày giao dịch</label>
-                  <input type="date" value={date} onChange={e => handleDateChange(e.target.value)}
+                  <input type="date" required value={date} onChange={e => handleDateChange(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none" />
                 </div>
                 <div>
@@ -546,8 +683,8 @@ export default function PortfolioPage() {
                 </div>
               )}
               <div className="flex gap-3">
-                <button onClick={handleSubmit} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-colors">
-                  {editingTx ? "✓ Lưu thay đổi" : "✓ Xác nhận giao dịch"}
+                <button onClick={handleSubmit} disabled={isSubmitting} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60 text-white font-semibold rounded-lg transition-colors">
+                  {isSubmitting ? "Đang lưu..." : editingTx ? "✓ Lưu thay đổi" : "✓ Xác nhận giao dịch"}
                 </button>
                 {editingTx && (
                   <button onClick={resetForm} className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors">Hủy</button>
@@ -607,37 +744,7 @@ export default function PortfolioPage() {
                           {normalizeType(t.type) === "BUY" ? "-" : "+"}{formatCurrencyValue(t.quantity * t.price, t.currency)}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {normalizeType(t.type) === "BUY" && currentPrices[t.assetSymbol] && (() => {
-                            const currentVal = t.quantity * currentPrices[t.assetSymbol];
-                            const costVal = t.quantity * t.price;
-                            const pnl = currentVal - costVal;
-                            const pnlPct = (pnl / costVal) * 100;
-                            return (
-                              <span className={`font-semibold text-xs ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                                {pnl >= 0 ? "▲" : "▼"} {pnl >= 0 ? "+" : ""}{pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })} ({pnlPct.toFixed(1)}%)
-                              </span>
-                            );
-                          })()}
-                          {normalizeType(t.type) === "BUY" && !currentPrices[t.assetSymbol] && (
-                            <span className="text-slate-600 text-xs">Đang tải...</span>
-                          )}
-                          {normalizeType(t.type) === "SELL" && (
-                            (() => {
-                              const realized = getSellRealizedPnl(t);
-                              if (!realized) return <span className="text-slate-600 text-xs">Thiếu giá vốn</span>;
-                              const isProfit = realized.pnl >= 0;
-                              return (
-                                <div className="text-right">
-                                  <span className={`font-semibold text-xs ${isProfit ? "text-green-400" : "text-red-400"}`}>
-                                    {isProfit ? "▲ +" : "▼ "}{formatCurrencyValue(realized.pnl, t.currency)} ({realized.pnlPct.toFixed(1)}%)
-                                  </span>
-                                  <p className="mt-1 text-[11px] text-slate-500">
-                                    Giá vốn {formatCurrencyValue(realized.avgCost, t.currency)}
-                                  </p>
-                                </div>
-                              );
-                            })()
-                          )}
+                          {renderTransactionPnl(t)}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex gap-2 justify-center">
