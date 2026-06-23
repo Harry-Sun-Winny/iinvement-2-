@@ -211,8 +211,9 @@ export default function Page() {
                 } catch {}
 
                 const avgCost = item.cost / item.qty;
-                const marketValue = currentPrice == null ? null : item.qty * currentPrice;
-                const pnl = marketValue == null ? null : marketValue - item.cost;
+                const displayPrice = currentPrice ?? avgCost;
+                const marketValue = item.qty * displayPrice;
+                const pnl = currentPrice == null ? 0 : marketValue - item.cost;
 
                 return {
                   symbol,
@@ -223,7 +224,7 @@ export default function Page() {
                   marketValue,
                   todayPnl,
                   pnl,
-                  returnPct: pnl == null || item.cost <= 0 ? null : (pnl / item.cost) * 100,
+                  returnPct: item.cost <= 0 ? 0 : (pnl / item.cost) * 100,
                   portfolioId: portfolio.id,
                   portfolioName: portfolio.name,
                   assetType: portfolio.type || "OTHER",
@@ -232,10 +233,9 @@ export default function Page() {
           );
 
           nextPositions.push(...priced);
-          const withPrices = priced.filter(item => item.marketValue != null);
-          const value = withPrices.length ? withPrices.reduce((sum, item) => sum + (item.marketValue || 0), 0) : null;
-          const pnl = withPrices.length ? withPrices.reduce((sum, item) => sum + (item.pnl || 0), 0) : null;
-          const cost = withPrices.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
+          const value = priced.length ? priced.reduce((sum, item) => sum + (item.marketValue || 0), 0) : null;
+          const pnl = priced.length ? priced.reduce((sum, item) => sum + (item.pnl || 0), 0) : null;
+          const cost = priced.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
           nextStats[portfolio.id] = { id: portfolio.id, value, pnl, returnPct: pnl == null || cost <= 0 ? null : (pnl / cost) * 100 };
         } catch {}
       })
@@ -255,12 +255,12 @@ export default function Page() {
   }
 
   const pricedPositions = useMemo(() => positions.filter(item => item.marketValue != null), [positions]);
-  const portfolioValue = pricedPositions.length ? pricedPositions.reduce((sum, item) => sum + (item.marketValue || 0), 0) : null;
-  const totalCost = pricedPositions.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
-  const totalPnl = pricedPositions.length ? pricedPositions.reduce((sum, item) => sum + (item.pnl || 0), 0) : null;
-  const todayPnl = pricedPositions.some(item => item.todayPnl != null) ? pricedPositions.reduce((sum, item) => sum + (item.todayPnl || 0), 0) : null;
+  const portfolioValue = positions.length ? positions.reduce((sum, item) => sum + (item.marketValue || 0), 0) : null;
+  const totalCost = positions.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
+  const totalPnl = positions.length ? positions.reduce((sum, item) => sum + (item.pnl || 0), 0) : null;
+  const todayPnl = positions.some(item => item.todayPnl != null) ? positions.reduce((sum, item) => sum + (item.todayPnl || 0), 0) : null;
   const totalReturn = totalPnl == null || totalCost <= 0 ? null : (totalPnl / totalCost) * 100;
-  const largestWeight = portfolioValue ? Math.max(0, ...pricedPositions.map(item => ((item.marketValue || 0) / portfolioValue) * 100)) : null;
+  const largestWeight = portfolioValue ? Math.max(0, ...positions.map(item => ((item.marketValue || 0) / portfolioValue) * 100)) : null;
 
   const allocation = useMemo(() => {
     if (!portfolioValue) return [];
@@ -508,7 +508,7 @@ export default function Page() {
                     { label: "Portfolio Value", value: fmtMoney(portfolioValue), tone: "text-white", border: "border-l-rainbow-blue" },
                     { label: "Today P/L", value: fmtSignedMoney(todayPnl), tone: todayPnl != null && todayPnl < 0 ? "text-[#ff6b6b]" : "text-[#0abf53]", border: "border-l-rainbow-green" },
                     { label: "Total Return", value: fmtPct(totalReturn), tone: totalReturn != null && totalReturn < 0 ? "text-[#ff6b6b]" : "text-[#ff9f43]", border: "border-l-rainbow-orange" },
-                    { label: "Cash Available", value: "N/A", tone: "text-[#c44dff]", border: "border-l-rainbow-violet" },
+                    { label: "Cost Basis", value: fmtMoney(totalCost), tone: "text-[#c44dff]", border: "border-l-rainbow-violet" },
                   ].map(item => (
                     <Card key={item.label} className={`border-white/10 bg-white/[0.03] ${item.border} transition-all duration-300 hover:bg-white/[0.05] hover:shadow-lg`}>
                       <CardHeader className="pb-2">
@@ -860,3 +860,4 @@ export default function Page() {
     </div>
   );
 }
+
