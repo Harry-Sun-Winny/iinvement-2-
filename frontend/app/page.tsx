@@ -158,6 +158,7 @@ const navItems = [
 ];
 
 export default function Page() {
+  const [isClient, setIsClient] = useState(false);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -175,6 +176,7 @@ export default function Page() {
   const [goalForm, setGoalForm] = useState({ name: "", amount: "", currency: "USD", date: "2030-01-01" });
 
   useEffect(() => {
+    setIsClient(true);
     if (!localStorage.getItem("token")) {
       window.location.href = "/login";
       return;
@@ -472,6 +474,8 @@ export default function Page() {
     };
     input.click();
   }
+
+  if (!isClient) return <div className="min-h-screen bg-[#050816]" />;
 
   return (
     <div className="min-h-screen bg-[#050816] text-slate-100">
