@@ -27,6 +27,14 @@ function normalizeType(value: string) {
   return value?.toUpperCase().trim();
 }
 
+function formatQuantity(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "N/A";
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 20,
+  });
+}
+
 function computeAllRealizedPnl(transactions: Transaction[]) {
   const ordered = [...transactions].sort((a, b) => {
     const dateA = new Date(a.transactionDate).getTime();
@@ -738,7 +746,7 @@ export default function PortfolioPage() {
                         <td className="px-4 py-3 font-semibold text-white">{t.assetSymbol}</td>
                         <td className="px-4 py-3 text-slate-300 text-xs">{t.assetName}</td>
                         <td className="px-4 py-3 text-slate-400 text-xs">{t.transactionDate?.slice(0,10)}</td>
-                        <td className="px-4 py-3 text-right text-white">{t.quantity.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                        <td className="px-4 py-3 min-w-[150px] whitespace-nowrap text-right font-mono tabular-nums text-white" title={String(t.quantity)}>{formatQuantity(t.quantity)}</td>
                         <td className="px-4 py-3 text-right text-white">{formatCurrencyValue(t.price, t.currency)}</td>
                         <td className={`px-4 py-3 text-right font-semibold ${normalizeType(t.type) === "BUY" ? "text-red-400" : "text-green-400"}`}>
                           {normalizeType(t.type) === "BUY" ? "-" : "+"}{formatCurrencyValue(t.quantity * t.price, t.currency)}

@@ -66,6 +66,14 @@ function normalizeType(value: string) {
   return value?.toUpperCase().trim();
 }
 
+function formatQuantity(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "N/A";
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 20,
+  });
+}
+
 // Heuristic guess - không chính xác 100%, nên thay bằng field category từ backend.
 // Ví dụ: công ty tên chứa "USD" sẽ bị nhận nhầm là CASH.
 // TODO: Khi backend Transaction có field category/assetCategory, ưu tiên dùng field đó.
@@ -526,7 +534,7 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
                       </span>
                     </TableCell>
                     <TableCell className="max-w-[220px] truncate text-slate-300">{position.name}</TableCell>
-                    <TableCell className="text-right text-slate-300">{position.quantity.toLocaleString(undefined, { maximumFractionDigits: 6 })}</TableCell>
+                    <TableCell className="min-w-[150px] whitespace-nowrap text-right font-mono tabular-nums text-slate-300" title={String(position.quantity)}>{formatQuantity(position.quantity)}</TableCell>
                     <TableCell className="text-right text-slate-300">{formatCompact(avgCost)}</TableCell>
                     <TableCell className="text-right text-slate-300">{formatCompact(position.currentPrice)}</TableCell>
                     <TableCell className="text-right font-medium text-white">{formatCompact(position.marketValue)}</TableCell>

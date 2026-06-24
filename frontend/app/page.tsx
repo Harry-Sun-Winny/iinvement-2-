@@ -142,6 +142,14 @@ const fmtSignedMoney = (value: number | null | undefined) =>
 const fmtPct = (value: number | null | undefined) =>
   value == null ? "N/A" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 
+const fmtQuantity = (value: number | null | undefined) => {
+  if (value == null || !Number.isFinite(value)) return "N/A";
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 20,
+  });
+};
+
 const navItems = [
   { id: "portfolios" as const, label: "Dashboard", Icon: BarChart3 },
   { id: "watchlists" as const, label: "Watchlist", Icon: Eye },
@@ -712,7 +720,7 @@ export default function Page() {
                               <TableRow key={`${position.portfolioId}-${position.symbol}`} className="border-white/10">
                                 <TableCell className="font-semibold text-white">{position.symbol}</TableCell>
                                 <TableCell className="text-slate-300">{position.name}</TableCell>
-                                <TableCell className="text-right text-slate-300">{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 6 })}</TableCell>
+                                <TableCell className="min-w-[150px] whitespace-nowrap text-right font-mono tabular-nums text-slate-300" title={String(position.quantity)}>{fmtQuantity(position.quantity)}</TableCell>
                                 <TableCell className="text-right text-slate-300">{fmtMoney(position.avgCost)}</TableCell>
                                 <TableCell className="text-right text-slate-300">{fmtMoney(position.currentPrice)}</TableCell>
                                 <TableCell className="text-right font-medium text-white">{fmtMoney(position.marketValue)}</TableCell>

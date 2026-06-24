@@ -102,7 +102,22 @@ export async function GET(req: NextRequest) {
         lastError = error;
       }
     }
-    throw lastError;
+    console.error("All quote sources failed for", symbol, lastError);
+    // Return a safe default so frontend can render stable UI instead of 500
+    return NextResponse.json(
+      {
+        symbol,
+        price: null,
+        currentPrice: null,
+        change: 0,
+        changePercent: 0,
+        currency: targetCurrency,
+        requestedSymbol: symbol,
+        resolvedSymbol: null,
+        dataQuality: { status: "ERROR", checks: [String(lastError)], sources: [], unavailableSources: [], primarySource: "", fallbackUsed: false, maxDeviationPercent: null },
+      },
+      { status: 200 },
+    );
   } catch (error) {
     console.error("Stock price error:", error);
     return NextResponse.json({ error: "Failed", details: String(error) }, { status: 500 });
