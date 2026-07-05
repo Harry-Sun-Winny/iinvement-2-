@@ -3,6 +3,7 @@ package com.acme.investment.application.transaction;
 import com.acme.investment.application.audit.AuditLogService;
 import com.acme.investment.application.holding.HoldingService;
 import com.acme.investment.application.snapshot.PortfolioSnapshotBackfillService;
+import com.acme.investment.application.taxlot.TaxLotService;
 import com.acme.investment.domain.transaction.Transaction;
 import com.acme.investment.infrastructure.persistence.UserEntity;
 import com.acme.investment.infrastructure.persistence.asset.AssetEntity;
@@ -13,6 +14,7 @@ import com.acme.investment.infrastructure.persistence.transaction.TransactionEnt
 import com.acme.investment.infrastructure.persistence.transaction.TransactionJpaRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -31,7 +33,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
-import org.springframework.web.server.ResponseStatusException;
 
 class TransactionServiceTest {
 
@@ -45,6 +46,7 @@ class TransactionServiceTest {
         AssetJpaRepository assetRepo = mock(AssetJpaRepository.class);
         AuditLogService auditLogService = mock(AuditLogService.class);
         HoldingService holdingService = mock(HoldingService.class);
+        TaxLotService taxLotService = mock(TaxLotService.class);
         PortfolioSnapshotBackfillService snapshotBackfillService = mock(PortfolioSnapshotBackfillService.class);
 
         TransactionService service = new TransactionService(
@@ -53,6 +55,7 @@ class TransactionServiceTest {
                 assetRepo,
                 auditLogService,
                 holdingService,
+                taxLotService,
                 snapshotBackfillService
         );
 
@@ -68,7 +71,7 @@ class TransactionServiceTest {
             return saved;
         });
         doNothing().when(holdingService).recalculate(portfolioId);
-        doNothing().when(snapshotBackfillService).runIncrementalBackfillAsync(portfolioId);
+        doNothing().when(snapshotBackfillService).runIncrementalBackfillAsync(eq(portfolioId), any(LocalDate.class));
 
         Transaction transaction = service.create(
                 portfolioId,
@@ -84,8 +87,9 @@ class TransactionServiceTest {
         );
 
         assertEquals(transactionId, transaction.id());
+        verify(taxLotService).recomputeForSymbol(portfolioId, "AAPL");
         verify(holdingService).recalculate(portfolioId);
-        verify(snapshotBackfillService).runIncrementalBackfillAsync(portfolioId);
+        verify(snapshotBackfillService).runIncrementalBackfillAsync(eq(portfolioId), eq(LocalDate.of(2026, 7, 5)));
         verify(auditLogService).log(eq(userId), eq("TRANSACTION"), eq(transactionId), eq("CREATE"), eq(null), anyMap());
     }
 
@@ -99,6 +103,7 @@ class TransactionServiceTest {
         AssetJpaRepository assetRepo = mock(AssetJpaRepository.class);
         AuditLogService auditLogService = mock(AuditLogService.class);
         HoldingService holdingService = mock(HoldingService.class);
+        TaxLotService taxLotService = mock(TaxLotService.class);
         PortfolioSnapshotBackfillService snapshotBackfillService = mock(PortfolioSnapshotBackfillService.class);
 
         TransactionService service = new TransactionService(
@@ -107,6 +112,7 @@ class TransactionServiceTest {
                 assetRepo,
                 auditLogService,
                 holdingService,
+                taxLotService,
                 snapshotBackfillService
         );
 
@@ -114,10 +120,11 @@ class TransactionServiceTest {
         when(transactionRepo.findById(transactionId)).thenReturn(Optional.of(existing));
         doNothing().when(transactionRepo).delete(existing);
 
-        service.delete(transactionId, userId);
+        service.delete(transactionId, userId, portfolioId);
 
+        verify(taxLotService).recomputeForSymbol(portfolioId, "AAPL");
         verify(holdingService).recalculate(portfolioId);
-        verify(snapshotBackfillService).runIncrementalBackfillAsync(portfolioId);
+        verify(snapshotBackfillService).runIncrementalBackfillAsync(eq(portfolioId), eq(LocalDate.of(2026, 7, 1)));
         verify(auditLogService).log(eq(userId), eq("TRANSACTION"), eq(transactionId), eq("DELETE"), anyMap(), eq(null));
     }
 
@@ -131,6 +138,7 @@ class TransactionServiceTest {
         AssetJpaRepository assetRepo = mock(AssetJpaRepository.class);
         AuditLogService auditLogService = mock(AuditLogService.class);
         HoldingService holdingService = mock(HoldingService.class);
+        TaxLotService taxLotService = mock(TaxLotService.class);
         PortfolioSnapshotBackfillService snapshotBackfillService = mock(PortfolioSnapshotBackfillService.class);
 
         TransactionService service = new TransactionService(
@@ -139,6 +147,7 @@ class TransactionServiceTest {
                 assetRepo,
                 auditLogService,
                 holdingService,
+                taxLotService,
                 snapshotBackfillService
         );
 
@@ -161,8 +170,10 @@ class TransactionServiceTest {
         );
 
         assertEquals("MSFT", transaction.assetSymbol());
+        verify(taxLotService).recomputeForSymbol(portfolioId, "AAPL");
+        verify(taxLotService).recomputeForSymbol(portfolioId, "msft");
         verify(holdingService).recalculate(portfolioId);
-        verify(snapshotBackfillService).runIncrementalBackfillAsync(portfolioId);
+        verify(snapshotBackfillService).runIncrementalBackfillAsync(eq(portfolioId), eq(LocalDate.of(2026, 7, 1)));
         verify(auditLogService).log(eq(userId), eq("TRANSACTION"), eq(transactionId), eq("UPDATE"), anyMap(), anyMap());
     }
 
@@ -175,6 +186,7 @@ class TransactionServiceTest {
         AssetJpaRepository assetRepo = mock(AssetJpaRepository.class);
         AuditLogService auditLogService = mock(AuditLogService.class);
         HoldingService holdingService = mock(HoldingService.class);
+        TaxLotService taxLotService = mock(TaxLotService.class);
         PortfolioSnapshotBackfillService snapshotBackfillService = mock(PortfolioSnapshotBackfillService.class);
 
         TransactionService service = new TransactionService(
@@ -183,6 +195,7 @@ class TransactionServiceTest {
                 assetRepo,
                 auditLogService,
                 holdingService,
+                taxLotService,
                 snapshotBackfillService
         );
 
@@ -202,7 +215,7 @@ class TransactionServiceTest {
         ));
 
         assertEquals(NOT_FOUND, error.getStatusCode());
-        verify(snapshotBackfillService, never()).runIncrementalBackfillAsync(portfolioId);
+        verify(snapshotBackfillService, never()).runIncrementalBackfillAsync(eq(portfolioId), any(LocalDate.class));
         verify(holdingService, never()).recalculate(portfolioId);
     }
 

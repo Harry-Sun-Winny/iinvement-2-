@@ -88,4 +88,51 @@ public class PortfolioSnapshotEntity {
     public void setCreatedAt(OffsetDateTime createdAt) {
         this.createdAt = createdAt;
     }
+
+    // Compatibility aliases for B's calculations
+    public BigDecimal getTotalValue() {
+        return portfolioValue;
+    }
+
+    public void setTotalValue(BigDecimal totalValue) {
+        this.portfolioValue = totalValue;
+    }
+
+    public BigDecimal getTotalCost() {
+        return investedAmount;
+    }
+
+    public void setTotalCost(BigDecimal totalCost) {
+        this.investedAmount = totalCost;
+    }
+
+    // ---------------------------------------------------------------------
+    // Compatibility shim for the merged Project B backfill implementation.
+    //
+    // Project A's portfolio_snapshots schema does not contain
+    // realized_pnl or unrealized_pnl columns.
+    //
+    // These methods exist only to preserve binary/source compatibility
+    // with code imported from Project B.
+    //
+    // The setters are intentionally no-ops because these values are not
+    // persisted in Project A.
+    //
+    // Do NOT use these methods as a source of persisted financial data.
+    //
+    // If snapshot P&L needs to be persisted in the future,
+    // introduce a proper Flyway migration and map real database columns
+    // instead of extending this compatibility shim.
+    // ---------------------------------------------------------------------
+    public BigDecimal getRealizedPnl() {
+        return BigDecimal.ZERO;
+    }
+
+    public void setRealizedPnl(BigDecimal realizedPnl) {}
+
+    public BigDecimal getUnrealizedPnl() {
+        return portfolioValue != null && investedAmount != null ? portfolioValue.subtract(investedAmount) : BigDecimal.ZERO;
+    }
+
+    public void setUnrealizedPnl(BigDecimal unrealizedPnl) {}
 }

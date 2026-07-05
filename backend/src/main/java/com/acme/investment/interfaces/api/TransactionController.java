@@ -53,7 +53,7 @@ public class TransactionController {
                        @PathVariable UUID id,
                        @AuthenticationPrincipal UserDetails u) {
         UUID userId = resolveUserId(u);
-        transactionService.delete(id, userId);
+        transactionService.delete(id, userId, portfolioId);
     }
 
     @PutMapping("/{id}")

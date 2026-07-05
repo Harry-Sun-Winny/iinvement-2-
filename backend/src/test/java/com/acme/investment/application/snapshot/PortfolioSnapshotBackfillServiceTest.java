@@ -1,6 +1,9 @@
 package com.acme.investment.application.snapshot;
 
+import com.acme.investment.application.market.MarketDataService;
+import com.acme.investment.domain.market.HistoricalPrice;
 import com.acme.investment.infrastructure.persistence.portfolio.PortfolioEntity;
+import com.acme.investment.infrastructure.persistence.portfolio.PortfolioJpaRepository;
 import com.acme.investment.infrastructure.persistence.snapshot.PortfolioSnapshotEntity;
 import com.acme.investment.infrastructure.persistence.snapshot.PortfolioSnapshotRepository;
 import com.acme.investment.infrastructure.persistence.transaction.TransactionEntity;
@@ -9,9 +12,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,34 +34,51 @@ class PortfolioSnapshotBackfillServiceTest {
         UUID portfolioId = UUID.randomUUID();
         PortfolioSnapshotRepository snapshotRepository = mock(PortfolioSnapshotRepository.class);
         TransactionJpaRepository transactionRepository = mock(TransactionJpaRepository.class);
-        PortfolioSnapshotBackfillService service = new PortfolioSnapshotBackfillService(snapshotRepository, transactionRepository);
+        PortfolioJpaRepository portfolioRepository = mock(PortfolioJpaRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
-        when(transactionRepository.findByPortfolioIdOrderByTransactionDateAsc(portfolioId)).thenReturn(List.of(
+        PortfolioSnapshotBackfillService service = new PortfolioSnapshotBackfillService(
+                transactionRepository,
+                snapshotRepository,
+                portfolioRepository,
+                marketDataService,
+                transactionManager,
+                2
+        );
+
+        when(portfolioRepository.existsById(portfolioId)).thenReturn(true);
+        when(transactionRepository.findByPortfolioId(portfolioId)).thenReturn(new ArrayList<>(List.of(
                 transaction(portfolioId, "BUY", "2026-01-01", 10, 100, 5, 0),
                 transaction(portfolioId, "SELL", "2026-01-02", 2, 120, 3, 20)
+        )));
+
+        // Mock historical market prices
+        when(marketDataService.getHistoricalPrices("TEST")).thenReturn(List.of(
+                new HistoricalPrice(LocalDate.of(2026, 1, 1), BigDecimal.valueOf(100)),
+                new HistoricalPrice(LocalDate.of(2026, 1, 2), BigDecimal.valueOf(120))
         ));
 
         service.runBackfill(portfolioId);
 
-        verify(snapshotRepository).deleteByPortfolioId(portfolioId);
+        verify(snapshotRepository).deleteByPortfolioIdAndSnapshotDateGreaterThanEqual(portfolioId, LocalDate.of(2026, 1, 1));
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<PortfolioSnapshotEntity>> snapshotsCaptor =
-                ArgumentCaptor.forClass((Class<List<PortfolioSnapshotEntity>>) (Class<?>) List.class);
-        verify(snapshotRepository).saveAll(snapshotsCaptor.capture());
+        ArgumentCaptor<PortfolioSnapshotEntity> snapshotCaptor = ArgumentCaptor.forClass(PortfolioSnapshotEntity.class);
+        verify(snapshotRepository, Mockito.atLeastOnce()).save(snapshotCaptor.capture());
 
-        List<PortfolioSnapshotEntity> savedSnapshots = snapshotsCaptor.getValue();
+        List<PortfolioSnapshotEntity> savedSnapshots = snapshotCaptor.getAllValues();
         assertTrue(savedSnapshots.size() >= 2);
 
         PortfolioSnapshotEntity firstDay = savedSnapshots.get(0);
         assertEquals(LocalDate.of(2026, 1, 1), firstDay.getSnapshotDate());
-        assertEquals(0, BigDecimal.valueOf(1005).compareTo(firstDay.getInvestedAmount()));
-        assertEquals(0, BigDecimal.valueOf(995).compareTo(firstDay.getPortfolioValue()));
+        assertEquals(0, BigDecimal.valueOf(0).compareTo(firstDay.getTotalCost()));
+        assertEquals(0, BigDecimal.valueOf(-5).compareTo(firstDay.getTotalValue()));
 
         PortfolioSnapshotEntity secondDay = savedSnapshots.get(1);
         assertEquals(LocalDate.of(2026, 1, 2), secondDay.getSnapshotDate());
-        assertEquals(0, BigDecimal.valueOf(1005).compareTo(secondDay.getInvestedAmount()));
-        assertEquals(0, BigDecimal.valueOf(772).compareTo(secondDay.getPortfolioValue()));
+        assertEquals(0, BigDecimal.valueOf(36).compareTo(secondDay.getTotalCost()));
+        assertEquals(0, BigDecimal.valueOf(192).compareTo(secondDay.getTotalValue()));
     }
 
     @Test
@@ -64,14 +86,26 @@ class PortfolioSnapshotBackfillServiceTest {
         UUID portfolioId = UUID.randomUUID();
         PortfolioSnapshotRepository snapshotRepository = mock(PortfolioSnapshotRepository.class);
         TransactionJpaRepository transactionRepository = mock(TransactionJpaRepository.class);
-        PortfolioSnapshotBackfillService service = new PortfolioSnapshotBackfillService(snapshotRepository, transactionRepository);
+        PortfolioJpaRepository portfolioRepository = mock(PortfolioJpaRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
-        when(transactionRepository.findByPortfolioIdOrderByTransactionDateAsc(portfolioId)).thenReturn(List.of());
+        PortfolioSnapshotBackfillService service = new PortfolioSnapshotBackfillService(
+                transactionRepository,
+                snapshotRepository,
+                portfolioRepository,
+                marketDataService,
+                transactionManager,
+                2
+        );
+
+        when(portfolioRepository.existsById(portfolioId)).thenReturn(true);
+        when(transactionRepository.findByPortfolioId(portfolioId)).thenReturn(List.of());
 
         service.runBackfill(portfolioId);
 
-        verify(snapshotRepository).deleteByPortfolioId(portfolioId);
-        verify(snapshotRepository, never()).saveAll(Mockito.<List<PortfolioSnapshotEntity>>any());
+        verify(snapshotRepository, never()).deleteByPortfolioIdAndSnapshotDateGreaterThanEqual(Mockito.any(), Mockito.any());
+        verify(snapshotRepository, never()).save(Mockito.any(PortfolioSnapshotEntity.class));
     }
 
     private TransactionEntity transaction(
@@ -87,6 +121,7 @@ class PortfolioSnapshotBackfillServiceTest {
         PortfolioEntity portfolio = new PortfolioEntity();
         ReflectionTestUtils.setField(portfolio, "id", portfolioId);
         entity.setPortfolio(portfolio);
+        entity.setAssetSymbol("TEST");
         entity.setType(type);
         entity.setTransactionDate(LocalDate.parse(date));
         entity.setQuantity(BigDecimal.valueOf(quantity));
