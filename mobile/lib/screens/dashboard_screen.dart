@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
 import 'portfolio_screen.dart';
+import '../utils/formatters.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -19,14 +20,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   static const muted = Color(0xFF94A3B8);
   static const green = Color(0xFF22C55E);
   static const red = Color(0xFFEF4444);
-
   final marketSymbols = const ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'BTC-USD'];
-  final topHoldings = const [
-    ('NVDA', 'NVIDIA', 24.0),
-    ('AAPL', 'Apple', 18.0),
-    ('BTC', 'Bitcoin', 12.0),
-    ('MSFT', 'Microsoft', 9.0),
-  ];
+
   final allocation = const [
     ('Stocks', 60.0, green),
     ('ETF', 20.0, Color(0xFF38BDF8)),
@@ -38,6 +33,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List watchlists = [];
   List goals = [];
   Map<String, Map<String, dynamic>?> market = {};
+  List<Map<String, dynamic>> allTransactions = [];
   bool loading = true;
   int tabIndex = 0;
   String error = '';
@@ -55,6 +51,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ApiService.getWatchlists(),
         ApiService.getGoals(),
       ]);
+      final portfolioData = results[0];
+      final txResults = await Future.wait(
+        portfolioData.map((portfolio) => ApiService.getTransactions(portfolio['id'])),
+      );
+      final txList = txResults.expand((items) => items).cast<Map<String, dynamic>>().toList();
       final quotes = <String, Map<String, dynamic>?>{};
       for (final symbol in marketSymbols) {
         quotes[symbol] = await ApiService.getStockPrice(symbol);
@@ -64,6 +65,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         portfolios = results[0];
         watchlists = results[1];
         goals = results[2];
+        allTransactions = txList;
         market = quotes;
         error = '';
         loading = false;
@@ -153,19 +155,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _dashboardTab() {
+    final holdings = _buildHoldings();
+    final totalCost = holdings.fold<double>(0, (sum, item) => sum + (item['cost'] as double));
+    final totalValue = holdings.fold<double>(0, (sum, item) => sum + (item['value'] as double));
+    final totalPnl = totalValue - totalCost;
+    final weightedToday = totalValue > 0
+        ? holdings.fold<double>(
+            0,
+            (sum, item) => sum + ((item['changePercent'] as double) * (item['value'] as double)),
+          ) /
+            totalValue
+        : 0;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       children: [
         Row(
           children: [
-            _statCard('Portfolio Value', '\$1.25M',
+            _statCard('Portfolio Value', formatCompactCurrency(totalValue),
                 Icons.account_balance_wallet_outlined),
             const SizedBox(width: 10),
-            _statCard('Today P/L', '+\$8.4K', Icons.trending_up_rounded,
-                valueColor: green),
+            _statCard('Today P/L', formatSignedCurrency(totalPnl), Icons.trending_up_rounded,
+                valueColor: totalPnl >= 0 ? green : red),
             const SizedBox(width: 10),
-            _statCard('Total Return', '+18.2%', Icons.show_chart_rounded,
-                valueColor: green),
+            _statCard('Today Move', formatSignedPercent(weightedToday), Icons.show_chart_rounded,
+                valueColor: weightedToday >= 0 ? green : red),
           ],
         ),
         const SizedBox(height: 10),
@@ -185,7 +199,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 18),
         _sectionTitle('Portfolios', Icons.bar_chart_rounded),
         const SizedBox(height: 10),
-        _holdingsCard(),
+        _holdingsCard(holdings),
         const SizedBox(height: 12),
         if (portfolios.isEmpty) _emptyCard('Chưa có portfolio nào'),
         ...portfolios.map((p) => _portfolioCard(p)),
@@ -374,7 +388,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _holdingsCard() => Container(
+  Widget _holdingsCard(List<Map<String, dynamic>> holdings) => Container(
         padding: const EdgeInsets.all(16),
         decoration: _panelDecoration(),
         child: Column(
@@ -384,7 +398,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 style: TextStyle(
                     color: Colors.white, fontWeight: FontWeight.w900)),
             const SizedBox(height: 12),
-            for (final h in topHoldings) _weightRow(h.$1, h.$2, h.$3, accent),
+            if (holdings.isEmpty)
+              const Text('Chưa có vị thế đang nắm giữ', style: TextStyle(color: muted, fontSize: 12))
+            else
+              for (final h in holdings.take(5))
+                _weightRow(
+                  h['symbol'] as String,
+                  '${formatCompactCurrency(h['value'] as double)} · ${formatSignedPercent(h['changePercent'] as double)}',
+                  h['weight'] as double,
+                  (h['changePercent'] as double) >= 0 ? green : accent,
+                ),
           ],
         ),
       );
@@ -742,6 +765,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
       borderRadius: BorderRadius.circular(8),
       border: Border.all(color: border),
     );
+  }
+
+  List<Map<String, dynamic>> _buildHoldings() {
+    final holdings = <String, Map<String, dynamic>>{};
+
+    for (final tx in allTransactions) {
+      final symbol = (tx['assetSymbol'] ?? '').toString().toUpperCase();
+      if (symbol.isEmpty) continue;
+
+      final quantity = ((tx['quantity'] ?? 0) as num).toDouble();
+      final price = ((tx['price'] ?? 0) as num).toDouble();
+      final type = (tx['type'] ?? '').toString().toUpperCase();
+
+      holdings.putIfAbsent(symbol, () => {
+            'symbol': symbol,
+            'name': (tx['assetName'] ?? symbol).toString(),
+            'quantity': 0.0,
+            'cost': 0.0,
+            'value': 0.0,
+            'changePercent': 0.0,
+          });
+
+      final entry = holdings[symbol]!;
+      if (type == 'BUY') {
+        entry['quantity'] = (entry['quantity'] as double) + quantity;
+        entry['cost'] = (entry['cost'] as double) + (quantity * price);
+      } else if (type == 'SELL') {
+        final existingQty = entry['quantity'] as double;
+        final avgCost = existingQty > 0 ? (entry['cost'] as double) / existingQty : price;
+        entry['quantity'] = (existingQty - quantity).clamp(0.0, double.infinity);
+        entry['cost'] = ((entry['cost'] as double) - (avgCost * quantity)).clamp(0.0, double.infinity);
+      }
+    }
+
+    final active = holdings.values.where((item) => (item['quantity'] as double) > 0).toList();
+
+    for (final item in active) {
+      final quote = market[item['symbol']] ?? {};
+      final currentPrice = ((quote?['price'] ?? 0) as num).toDouble();
+      final quantity = item['quantity'] as double;
+      item['value'] = quantity * currentPrice;
+      item['changePercent'] = ((quote?['changePercent'] ?? 0) as num).toDouble();
+    }
+
+    final totalValue = active.fold<double>(0, (sum, item) => sum + (item['value'] as double));
+    for (final item in active) {
+      final value = item['value'] as double;
+      item['weight'] = totalValue > 0 ? (value / totalValue) * 100 : 0.0;
+    }
+
+    active.sort((a, b) => ((b['value'] as double).compareTo(a['value'] as double)));
+    return active;
   }
 }
 

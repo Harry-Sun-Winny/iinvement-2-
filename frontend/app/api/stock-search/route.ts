@@ -1,4 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import YahooFinanceClass from "yahoo-finance2";
+const yahooFinance = new YahooFinanceClass();
 
 const ALLOWED_TYPES = ["EQUITY", "ETF", "CRYPTOCURRENCY", "FUTURE", "MUTUALFUND"];
 
@@ -8,11 +10,7 @@ export async function GET(req: NextRequest) {
 
   const query = q.trim().toUpperCase();
   try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=12&newsCount=0`,
-      { headers: { "User-Agent": "Mozilla/5.0" } },
-    );
-    const data = await res.json();
+    const data = await yahooFinance.search(q, { quotesCount: 12, newsCount: 0 });
     const results = (data.quotes ?? [])
       .filter((quote: any) => ALLOWED_TYPES.includes(quote.quoteType))
       .map((quote: any, index: number) => ({ quote, index }))
@@ -41,8 +39,9 @@ function rankQuote(quote: any, query: string, index: number) {
   let rank = index;
 
   if (symbol === query) rank -= 1000;
-  if (query.length <= 4 && symbol.startsWith(query)) rank -= 20;
-  if (query.length <= 4 && quote.quoteType === "EQUITY") rank -= 5;
+  if (symbol.startsWith(query)) rank -= 100;
+  if (symbol.includes(query)) rank -= 10;
+  if (quote.quoteType === "EQUITY") rank -= 5;
 
   return rank;
 }

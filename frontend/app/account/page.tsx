@@ -16,6 +16,8 @@ import {
   Watchlist,
 } from "../lib/api";
 
+import Alert from "@/components/ui/Alert";
+
 type SecurityEvent = {
   action: string;
   detail: string;
@@ -157,232 +159,100 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="app-shell flex">
-      <aside className="fixed flex h-full w-56 flex-col gap-2 border-r border-slate-800 bg-slate-900 p-4">
-        <div className="mb-6 px-2">
-          <h1 className="text-lg font-bold text-white">💹 Investment</h1>
-          <p className="text-xs text-slate-500">Account Center</p>
-        </div>
-        {[
-          ["📊", "Dashboard", "/"],
-          ["🌍", "Market", "/market"],
-          ["🤖", "AI Analysis", "/analysis"],
-          ["👤", "Tài khoản", "/account"],
-        ].map(([icon, label, href]) => (
-          <button
-            key={href}
-            onClick={() => (window.location.href = href)}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-              href === "/account" ? "rainbow-bg text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-            }`}
-          >
-            {icon} {label}
-          </button>
-        ))}
-        <button
-          onClick={logout}
-          className="mt-auto rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-400 transition-all hover:bg-red-500/10 hover:text-red-400"
-        >
-          🚪 Đăng xuất
-        </button>
-      </aside>
+    <>
 
-      <main className="ml-56 flex-1 p-8">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-8">
-            <p className="text-sm text-slate-500">Quản lý hồ sơ, bảo mật, dữ liệu và quyền riêng tư</p>
-            <h2 className="text-2xl font-bold text-white">Tài khoản người dùng</h2>
-          </div>
+      <div className="flex flex-1 h-full overflow-hidden">
+      <main className="w-[800px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
 
-          {error && <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">{error}</div>}
+          {error && (
+            <Alert variant="error">
+              {error}
+            </Alert>
+          )}
 
-          <div className="grid grid-cols-4 gap-4">
-            <Metric label="Portfolios" value={portfolios.length} tone="blue" />
-            <Metric label="Watchlists" value={watchlists.length} tone="purple" />
-            <Metric label="Transactions" value={transactions.length} tone="green" />
-            <Metric label="AI Chats" value={aiConversations.length} tone="yellow" />
-          </div>
-
-          <div className="mt-6 grid grid-cols-3 gap-6">
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-blue">
-              <h3 className="mb-4 text-lg font-semibold">👤 Hồ sơ cá nhân</h3>
-              <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full rainbow-bg text-xl font-bold">
-                  {(email || "U").charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <p className="font-semibold text-white">{email || "Người dùng"}</p>
-                  <p className="text-sm text-slate-500">Việt Nam · Asia/Saigon · Tiếng Việt</p>
-                </div>
-              </div>
-              <InfoRows
-                rows={[
-                  ["Họ tên", "Chưa có API cập nhật"],
-                  ["Email", email || "Đọc từ JWT"],
-                  ["Số điện thoại", "Chưa cấu hình"],
-                  ["Ảnh đại diện", "Chưa cấu hình"],
-                  ["Quốc gia", "VN"],
-                  ["Múi giờ", "Asia/Saigon"],
-                ]}
-              />
-            </section>
-
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-red">
-              <h3 className="mb-4 text-lg font-semibold">🔐 Bảo mật tài khoản</h3>
-              <StatusRow label="Email + mật khẩu" status="Đang dùng" ok />
-              <StatusRow label="BCrypt password hash" status="Backend đã có" ok />
-              <StatusRow label="JWT access token" status="Backend đã có" ok />
-              <StatusRow label="Email OTP" status="Chưa triển khai" />
-              <StatusRow label="Authenticator TOTP" status="Chưa triển khai" />
-              <StatusRow label="Google / Apple Login" status="Chưa triển khai" />
-              <div className="mt-4 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3 text-xs text-yellow-200">
-                MVP tiếp theo nên ưu tiên: quên mật khẩu, refresh token, 2FA, đăng xuất toàn bộ thiết bị.
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-violet">
-              <h3 className="mb-4 text-lg font-semibold">💳 Gói dịch vụ</h3>
-              <InfoRows
-                rows={[
-                  ["Gói hiện tại", "Free"],
-                  ["Ngày đăng ký", "Chưa có billing API"],
-                  ["Ngày hết hạn", "Không áp dụng"],
-                  ["Tính năng", "Portfolio, Watchlist, AI cơ bản"],
-                ]}
-              />
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-                {["Free", "Pro", "Enterprise"].map((plan) => (
-                  <div key={plan} className={`rounded-lg border p-2 ${plan === "Free" ? "border-[#54a0ff] bg-[#54a0ff]/10 text-[#54a0ff]" : "border-slate-700 text-slate-400"}`}>
-                    {plan}
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <div className="mt-6 grid grid-cols-2 gap-6">
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-green">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold">📈 Danh mục đầu tư</h3>
-                <button onClick={() => (window.location.href = "/")} className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700">
-                  Quản lý
-                </button>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <Metric label="Danh mục" value={portfolios.length} tone="blue" compact />
-                <Metric label="Giao dịch" value={transactions.length} tone="green" compact />
-                <Metric label="Mục tiêu" value={goals.length} tone="yellow" compact />
-              </div>
-              <div className="mt-4 space-y-2">
-                {portfolios.slice(0, 4).map((portfolio) => (
-                  <div key={portfolio.id} className="flex items-center justify-between rounded-lg bg-slate-800/70 px-3 py-2 text-sm">
-                    <span>{portfolio.name}</span>
-                    <span className="text-slate-500">{portfolio.type} · {portfolio.baseCurrency}</span>
-                  </div>
-                ))}
-                {portfolios.length === 0 && <p className="text-sm text-slate-500">Chưa có danh mục.</p>}
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-orange">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold">👁 Watchlist & cảnh báo</h3>
-                <button onClick={() => (window.location.href = "/")} className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700">
-                  Mở dashboard
-                </button>
-              </div>
-              <StatusRow label="Watchlist cổ phiếu/ETF/crypto" status={`${watchlists.length} danh sách`} ok={watchlists.length > 0} />
-              <StatusRow label="Cảnh báo giá" status="Chưa có API tạo rule" />
-              <StatusRow label="Cảnh báo tin tức" status="Chưa có API tạo rule" />
-              <div className="mt-4 space-y-2">
-                {notifications.slice(0, 4).map((item) => (
-                  <div key={item.id} className="rounded-lg bg-slate-800/70 px-3 py-2 text-sm">
-                    <p className="text-white">{item.title}</p>
-                    <p className="text-xs text-slate-500">{item.message}</p>
-                  </div>
-                ))}
-                {notifications.length === 0 && <p className="text-sm text-slate-500">Chưa có thông báo.</p>}
-              </div>
-            </section>
-          </div>
-
-          <div className="mt-6 grid grid-cols-2 gap-6">
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-yellow">
-              <h3 className="mb-4 text-lg font-semibold">🧾 Nhật ký hoạt động & bảo mật</h3>
-              <div className="space-y-2">
-                {securityEvents.map((event, index) => (
-                  <div key={`${event.action}-${index}`} className="flex items-center justify-between rounded-lg bg-slate-800/70 px-3 py-2 text-sm">
-                    <div>
-                      <p className="text-white">{event.action}</p>
-                      <p className="text-xs text-slate-500">{event.detail}</p>
-                    </div>
-                    <span className={event.severity === "success" ? "text-green-400 text-xs" : event.severity === "warn" ? "text-yellow-300 text-xs" : "text-slate-500 text-xs"}>
-                      {event.time ? formatDate(event.time) : "—"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-indigo">
-              <h3 className="mb-4 text-lg font-semibold">💻 Thiết bị đăng nhập</h3>
-              <div className="overflow-hidden rounded-lg border border-slate-800">
-                <div className="grid grid-cols-4 bg-slate-800 px-3 py-2 text-xs text-slate-400">
-                  <span>Thiết bị</span><span>IP</span><span>Quốc gia</span><span>Thời gian</span>
-                </div>
-                <div className="grid grid-cols-4 px-3 py-3 text-sm">
-                  <span>Trình duyệt hiện tại</span><span>Local</span><span>VN</span><span className="text-green-400">Hiện tại</span>
-                </div>
-              </div>
-              <div className="mt-3 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3 text-xs text-yellow-200">
-                Cần backend session table để đăng xuất thiết bị khác và phát hiện đăng nhập bất thường.
-              </div>
-            </section>
-          </div>
-
-          <div className="mt-6 grid grid-cols-3 gap-6">
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-violet">
-              <h3 className="mb-4 text-lg font-semibold">🤖 AI cá nhân hóa</h3>
-              <InfoRows
-                rows={[
-                  ["Lịch sử chat", `${aiConversations.length} cuộc trò chuyện`],
-                  ["Chủ đề quan tâm", interestedTopics.join(", ")],
-                  ["Danh mục thường xem", portfolios[0]?.name || "Chưa đủ dữ liệu"],
-                ]}
-              />
-            </section>
-
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-blue">
-              <h3 className="mb-4 text-lg font-semibold">🛡 Quyền riêng tư</h3>
-              <StatusRow label="Xuất dữ liệu cá nhân" status="Chưa triển khai" />
-              <StatusRow label="Tải dữ liệu đầu tư" status="Có thể tổng hợp từ portfolio/transaction" ok />
-              <StatusRow label="Xóa dữ liệu/tài khoản" status="Chưa triển khai" />
-              <StatusRow label="Quản lý cookie" status="Chưa triển khai" />
-            </section>
-
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 border-l-rainbow-red">
-              <h3 className="mb-4 text-lg font-semibold">🛠 Admin overview</h3>
-              <StatusRow label="KPI hệ thống" status="Đã có /api/v1/admin/kpi" ok />
-              <StatusRow label="Quản lý user" status="Chưa triển khai" />
-              <StatusRow label="Khóa/mở tài khoản" status="Chưa triển khai" />
-              <StatusRow label="Reset 2FA" status="Chưa triển khai" />
-              <StatusRow label="Giám sát API lỗi" status="Chưa triển khai" />
-            </section>
-          </div>
-
-          <section className="mt-6 rounded-xl border border-slate-800 bg-slate-900 p-5">
-            <h3 className="mb-4 text-lg font-semibold rainbow-text">✅ MVP account roadmap</h3>
-            <div className="grid grid-cols-4 gap-2">
-              {roadmapItems.map((item) => (
-                <div key={item} className="rounded-lg border border-slate-800 bg-slate-950 hover:border-[#54a0ff]/30 transition-colors px-3 py-2 text-xs text-slate-400">
-                  {item}
-                </div>
-              ))}
+          {/* Profile Details Panel */}
+          <div className="antigravity-panel antigravity-float-slow overflow-hidden">
+            <div className="border-b border-white/5 p-6 bg-white/[0.01]">
+              <h2 className="text-sm font-bold text-white tracking-widest uppercase">Thông tin tài khoản</h2>
             </div>
-          </section>
-        </div>
-      </main>
+            <div className="p-6">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <tbody className="divide-y divide-white/5">
+                    <tr className="hover:bg-white/[0.01]">
+                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider w-1/3">Email Workspace</td>
+                      <td className="py-4 font-semibold text-white">{email || "Đọc từ JWT"}</td>
+                    </tr>
+                    <tr className="hover:bg-white/[0.01]">
+                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider">Họ tên</td>
+                      <td className="py-4 font-semibold text-slate-350">Người dùng hệ thống</td>
+                    </tr>
+                    <tr className="hover:bg-white/[0.01]">
+                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider">Quốc gia / Múi giờ</td>
+                      <td className="py-4 font-semibold text-slate-350">VN · Asia/Saigon (GMT+7)</td>
+                    </tr>
+                    <tr className="hover:bg-white/[0.01]">
+                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider">Gói dịch vụ</td>
+                      <td className="py-4 font-semibold text-emerald-450"> Rainbow Standard (Free)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Security Log Table Panel */}
+          <div className="antigravity-panel antigravity-float-slow overflow-hidden">
+            <div className="border-b border-white/5 p-6 bg-white/[0.01]">
+              <h2 className="text-sm font-bold text-white tracking-widest uppercase">Nhật ký hoạt động & bảo mật</h2>
+            </div>
+            <div className="p-6">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="border-b border-white/5 pb-3 text-slate-400 font-bold uppercase tracking-wider">
+                      <th className="pb-3 w-1/3">Hoạt động</th>
+                      <th className="pb-3 w-1/3">Chi tiết</th>
+                      <th className="pb-3 text-right">Thời gian</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {securityEvents.map((event, index) => (
+                      <tr key={`${event.action}-${index}`} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="py-4 font-bold text-white uppercase tracking-wide">{event.action}</td>
+                        <td className="py-4 text-slate-350">{event.detail}</td>
+                        <td className="py-4 text-right text-slate-500 font-medium">
+                          {event.time ? new Date(event.time).toLocaleString("vi-VN") : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Roadmap Table Panel */}
+          <div className="antigravity-panel antigravity-float-slower overflow-hidden">
+            <div className="border-b border-white/5 p-6 bg-white/[0.01]">
+              <h2 className="text-sm font-bold text-white tracking-widest uppercase">MVP Roadmap Checklist</h2>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {roadmapItems.map((item) => (
+                  <div key={item} className="border border-white/5 bg-white/[0.01] p-3 rounded-lg flex items-center gap-2 hover:bg-white/[0.02] transition-all">
+                    <span className="text-emerald-450 font-bold">✓</span>
+                    <span className="text-[11px] font-semibold text-slate-400">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+        </main>
+      <div className="flex-1 h-full overflow-y-auto p-6 bg-transparent" />
     </div>
+    </>
   );
 }
 

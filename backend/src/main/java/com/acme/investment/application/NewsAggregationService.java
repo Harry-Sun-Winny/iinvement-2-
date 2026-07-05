@@ -19,6 +19,7 @@ public class NewsAggregationService {
     }
 
     /** @deprecated use {@link #latestArticles(String)} for full article data */
+    @Deprecated
     public List<NewsSummary> latest() {
         return newsIngestionService.listLatest(null).stream()
                 .map(a -> new NewsSummary(a.source(), a.publicationDate(), a.summary(), a.url()))

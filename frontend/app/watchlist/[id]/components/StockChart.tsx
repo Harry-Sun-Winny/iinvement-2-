@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, useEffect } from "react";
 import {
   Area,
   Bar,
@@ -8,6 +8,7 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -106,6 +107,12 @@ interface StockChartProps {
 
 function StockChart({ data, loading, error }: StockChartProps) {
   const [range, setRange] = useState<RangeKey>("1Y");
+  const [mounted, setMounted] = useState(false);
+  const [brushRange, setBrushRange] = useState<{ startIndex: number; endIndex: number } | null>(null);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [activeSeries, setActiveSeries] = useState<Record<SeriesKey, boolean>>({
     price: true,
     volume: true,
@@ -119,10 +126,19 @@ function StockChart({ data, loading, error }: StockChartProps) {
 
   const visibleData = useMemo(() => filterByRange(data, range), [data, range]);
   const chartData = useMemo(() => downsample(visibleData), [visibleData]);
+  const priceSeries = useMemo(() => chartData.map(point => point.price).filter((value): value is number => value != null && Number.isFinite(value)), [chartData]);
   const availability = useMemo(
     () => Object.fromEntries(seriesConfig.map(item => [item.key, data.some(point => point[item.key] != null)])) as Record<SeriesKey, boolean>,
     [data],
   );
+  const high52Week = useMemo(() => priceSeries.length ? Math.max(...priceSeries) : null, [priceSeries]);
+  const low52Week = useMemo(() => priceSeries.length ? Math.min(...priceSeries) : null, [priceSeries]);
+  const brushStart = brushRange?.startIndex ?? 0;
+  const brushEnd = brushRange?.endIndex ?? Math.max(chartData.length - 1, 0);
+
+  useEffect(() => {
+    setBrushRange(chartData.length ? { startIndex: 0, endIndex: chartData.length - 1 } : null);
+  }, [chartData.length]);
 
   function toggleSeries(key: SeriesKey) {
     if (!availability[key]) return;
@@ -135,9 +151,9 @@ function StockChart({ data, loading, error }: StockChartProps) {
         <div>
           <CardTitle className="flex items-center gap-2 text-white">
             <Activity className="h-5 w-5 text-cyan-300" />
-            Multi-Series Analytics
+            Biểu đồ giá & chỉ số
           </CardTitle>
-          <CardDescription>Use the brush to zoom and pan. Hover for crosshair details.</CardDescription>
+          <CardDescription>Theo dõi giá, trung bình động và các mốc quan trọng trên cùng một màn hình.</CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
           {ranges.map(item => (
@@ -161,7 +177,7 @@ function StockChart({ data, loading, error }: StockChartProps) {
               onKeyDown={event => event.key === "Enter" && toggleSeries(item.key)}
               className={`border-white/10 px-3 py-1.5 ${
                 !availability[item.key]
-                  ? "cursor-not-allowed opacity-40"
+                  ? "cursor-not-allowed border-dashed border-white/5 bg-slate-900/70 text-slate-500 opacity-30"
                   : activeSeries[item.key]
                     ? "cursor-pointer bg-white/[0.08] text-white"
                     : "cursor-pointer text-slate-500"
@@ -169,7 +185,7 @@ function StockChart({ data, loading, error }: StockChartProps) {
             >
               <span className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
               {item.label}
-              {!availability[item.key] && <span className="ml-1 text-[10px]">No data</span>}
+              {!availability[item.key] && <span className="ml-1 text-[10px] uppercase tracking-wide">No data</span>}
             </Badge>
           ))}
         </div>
@@ -181,33 +197,76 @@ function StockChart({ data, loading, error }: StockChartProps) {
         ) : chartData.length === 0 ? (
           <div className="grid h-[420px] place-items-center rounded-xl border border-white/10 bg-slate-950/40 text-sm text-slate-500">No chart data available.</div>
         ) : (
-          <div className="h-[420px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 10, right: 18, bottom: 20, left: 0 }}>
-                <defs>
-                  <linearGradient id="priceFill" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.28} />
-                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} tickLine={false} axisLine={{ stroke: "#334155" }} minTickGap={28} />
-                <YAxis yAxisId="left" tickFormatter={compactNumber} tick={{ fill: "#94a3b8", fontSize: 11 }} tickLine={false} axisLine={false} width={62} />
-                <YAxis yAxisId="right" orientation="right" tickFormatter={compactNumber} tick={{ fill: "#64748b", fontSize: 11 }} tickLine={false} axisLine={false} width={68} />
-                <Tooltip content={<StockTooltip />} cursor={{ stroke: "#38bdf8", strokeWidth: 1, strokeDasharray: "4 4" }} />
-                {seriesConfig.map(item => {
-                  if (!activeSeries[item.key]) return null;
-                  if (item.kind === "bar") {
-                    return <Bar key={item.key} yAxisId={item.axis} dataKey={item.key} name={item.label} fill={item.color} opacity={0.28} barSize={12} isAnimationActive />;
-                  }
-                  if (item.kind === "area") {
-                    return <Area key={item.key} yAxisId={item.axis} type="monotone" dataKey={item.key} name={item.label} stroke={item.color} fill="url(#priceFill)" strokeWidth={2.4} dot={false} isAnimationActive />;
-                  }
-                  return <Line key={item.key} yAxisId={item.axis} type="monotone" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={1.8} dot={false} isAnimationActive />;
-                })}
-                <Brush dataKey="date" height={24} travellerWidth={8} stroke="#38bdf8" fill="#020617" tickFormatter={value => String(value).slice(5)} />
-              </ComposedChart>
-            </ResponsiveContainer>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-lg border border-white/5 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-400">
+              <span>{chartData[brushStart]?.date ?? "--"}</span>
+              <span className="text-slate-500">Khoảng thời gian đang xem</span>
+              <span>{chartData[brushEnd]?.date ?? "--"}</span>
+            </div>
+            <div className="h-[420px]">
+            {mounted && (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 10, right: 18, bottom: 20, left: 0 }}>
+                  <defs>
+                    <linearGradient id="priceFill" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.28} />
+                      <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} tickLine={false} axisLine={{ stroke: "#334155" }} minTickGap={28} />
+                  <YAxis yAxisId="left" tickFormatter={compactNumber} tick={{ fill: "#94a3b8", fontSize: 11 }} tickLine={false} axisLine={false} width={62} />
+                  <YAxis yAxisId="right" orientation="right" tickFormatter={compactNumber} tick={{ fill: "#64748b", fontSize: 11 }} tickLine={false} axisLine={false} width={68} />
+                  <Tooltip content={<StockTooltip />} cursor={{ stroke: "#38bdf8", strokeWidth: 1, strokeDasharray: "4 4" }} />
+                  {high52Week != null && (
+                    <ReferenceLine
+                      yAxisId="left"
+                      y={high52Week}
+                      stroke="#94a3b8"
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.4}
+                      label={{ value: `52W High ${compactNumber(high52Week)}`, position: "insideTopRight", fill: "#cbd5e1", fontSize: 10 }}
+                    />
+                  )}
+                  {low52Week != null && (
+                    <ReferenceLine
+                      yAxisId="left"
+                      y={low52Week}
+                      stroke="#64748b"
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.4}
+                      label={{ value: `52W Low ${compactNumber(low52Week)}`, position: "insideBottomRight", fill: "#94a3b8", fontSize: 10 }}
+                    />
+                  )}
+                  {seriesConfig.map(item => {
+                    if (!activeSeries[item.key]) return null;
+                    if (item.kind === "bar") {
+                      return <Bar key={item.key} yAxisId={item.axis} dataKey={item.key} name={item.label} fill={item.color} opacity={0.28} barSize={12} isAnimationActive />;
+                    }
+                    if (item.kind === "area") {
+                      return <Area key={item.key} yAxisId={item.axis} type="monotone" dataKey={item.key} name={item.label} stroke={item.color} fill="url(#priceFill)" strokeWidth={2.4} dot={false} isAnimationActive />;
+                    }
+                    const strokeWidth = item.key === "ma50" ? 1.4 : item.key === "ma200" ? 1.2 : 1.8;
+                    const opacity = item.key === "ma50" ? 0.75 : item.key === "ma200" ? 0.6 : 0.9;
+                    return <Line key={item.key} yAxisId={item.axis} type="monotone" dataKey={item.key} name={item.label} stroke={item.color} strokeOpacity={opacity} strokeWidth={strokeWidth} dot={false} isAnimationActive />;
+                  })}
+                  <Brush
+                    dataKey="date"
+                    height={24}
+                    travellerWidth={8}
+                    stroke="#38bdf8"
+                    fill="#020617"
+                    tickFormatter={value => String(value).slice(5)}
+                    onChange={(next) => {
+                      if (typeof next?.startIndex === "number" && typeof next?.endIndex === "number") {
+                        setBrushRange({ startIndex: next.startIndex, endIndex: next.endIndex });
+                      }
+                    }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </div>
           </div>
         )}
       </CardContent>

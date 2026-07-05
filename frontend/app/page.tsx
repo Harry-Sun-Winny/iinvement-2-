@@ -71,6 +71,11 @@ interface NewsItem {
   publishedAt: string;
 }
 
+interface NewsAssetOption {
+  symbol: string;
+  name: string;
+}
+
 interface DashboardPosition {
   symbol: string;
   name: string;
@@ -98,39 +103,6 @@ interface PerformancePoint {
   value: number;
 }
 
-interface DashboardCache {
-  portfolios: Portfolio[];
-  watchlists: Watchlist[];
-  goals: Goal[];
-  positions: DashboardPosition[];
-  portfolioStats: Record<string, PortfolioStat>;
-  performance: PerformancePoint[];
-  savedAt: number;
-}
-
-const DASHBOARD_CACHE_KEY = "investment-dashboard-cache-v1";
-
-function readDashboardCache(): DashboardCache | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as DashboardCache;
-    if (!Array.isArray(parsed.portfolios) || !Array.isArray(parsed.positions)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeDashboardCache(cache: DashboardCache) {
-  try {
-    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    // Ignore cache quota/private-mode failures; backend remains source of truth.
-  }
-}
-
 const chartColors = ["#ff6b6b", "#ff9f43", "#feca57", "#0abf53", "#54a0ff", "#5f27cd", "#c44dff"];
 
 const fmtMoney = (value: number | null | undefined) =>
@@ -141,14 +113,6 @@ const fmtSignedMoney = (value: number | null | undefined) =>
 
 const fmtPct = (value: number | null | undefined) =>
   value == null ? "N/A" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
-
-const fmtQuantity = (value: number | null | undefined) => {
-  if (value == null || !Number.isFinite(value)) return "N/A";
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-    maximumFractionDigits: 20,
-  });
-};
 
 const navItems = [
   { id: "portfolios" as const, label: "Dashboard", Icon: BarChart3 },
@@ -168,6 +132,8 @@ export default function Page() {
   const [portfolioStats, setPortfolioStats] = useState<Record<string, PortfolioStat>>({});
   const [performance, setPerformance] = useState<PerformancePoint[]>([]);
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
+  const [newsAssets, setNewsAssets] = useState<NewsAssetOption[]>([]);
+  const [newsQuery, setNewsQuery] = useState("");
   const [newsLoading, setNewsLoading] = useState(false);
   const [modal, setModal] = useState<ModalType>(null);
   const [portfolioForm, setPortfolioForm] = useState({ name: "", currency: "USD", type: "STOCKS" });
@@ -179,18 +145,6 @@ export default function Page() {
       window.location.href = "/login";
       return;
     }
-
-    const cache = readDashboardCache();
-    if (cache) {
-      setPortfolios(cache.portfolios);
-      setWatchlists(cache.watchlists);
-      setGoals(cache.goals);
-      setPositions(cache.positions);
-      setPortfolioStats(cache.portfolioStats);
-      setPerformance(cache.performance);
-      setLoading(false);
-    }
-
     loadData();
   }, []);
 
@@ -199,27 +153,10 @@ export default function Page() {
     setError("");
     try {
       const [portfolioData, watchlistData, goalData] = await Promise.all([getPortfolios(), getWatchlists(), getGoals()]);
-      const existingCache = readDashboardCache();
-      if (portfolioData.length === 0 && existingCache?.portfolios?.length) {
-        setError("Backend đang trả dữ liệu trống nên dashboard tạm giữ số liệu cache gần nhất.");
-        return;
-      }
-      const dashboardData = await loadDashboardData(portfolioData);
       setPortfolios(portfolioData);
       setWatchlists(watchlistData);
       setGoals(goalData);
-      setPositions(dashboardData.positions);
-      setPortfolioStats(dashboardData.portfolioStats);
-      setPerformance(dashboardData.performance);
-      writeDashboardCache({
-        portfolios: portfolioData,
-        watchlists: watchlistData,
-        goals: goalData,
-        positions: dashboardData.positions,
-        portfolioStats: dashboardData.portfolioStats,
-        performance: dashboardData.performance,
-        savedAt: Date.now(),
-      });
+      await loadDashboardData(portfolioData);
     } catch (e: any) {
       if (e instanceof ApiError && e.status === 401) {
         localStorage.removeItem("token");
@@ -236,80 +173,72 @@ export default function Page() {
     const nextPositions: DashboardPosition[] = [];
     const nextStats: Record<string, PortfolioStat> = {};
     const timeline = new Map<string, number>();
+    const allSymbols = new Set<string>();
 
-    await Promise.all(
+    // Instead of sync, we do have to fetch transactions async, but we can do it in parallel.
+    const portfolioTxns = await Promise.all(
       portfolioData.map(async portfolio => {
         try {
-          const transactions = await getTransactions(portfolio.id);
-          const holdings: Record<string, { name: string; qty: number; cost: number }> = {};
-
-          transactions.forEach((tx: any) => {
-            const symbol = String(tx.assetSymbol || "").toUpperCase();
-            if (!symbol) return;
-
-            const quantity = Number(tx.quantity || 0);
-            const price = Number(tx.price || 0);
-            const side = String(tx.type || "").toUpperCase();
-            const dateKey = String(tx.transactionDate || tx.date || tx.createdAt || "").slice(0, 10);
-
-            if (!holdings[symbol]) holdings[symbol] = { name: tx.assetName || symbol, qty: 0, cost: 0 };
-            if (dateKey) timeline.set(dateKey, (timeline.get(dateKey) || 0) + (side === "SELL" ? -quantity * price : quantity * price));
-
-            if (side === "BUY") {
-              holdings[symbol].qty += quantity;
-              holdings[symbol].cost += quantity * price;
-            }
-
-            if (side === "SELL") {
-              const avg = holdings[symbol].qty > 0 ? holdings[symbol].cost / holdings[symbol].qty : price;
-              holdings[symbol].qty -= quantity;
-              holdings[symbol].cost = Math.max(0, holdings[symbol].cost - avg * quantity);
-            }
-          });
-
-          const priced = await Promise.all(
-            Object.entries(holdings)
-              .filter(([, item]) => item.qty > 0)
-              .map(async ([symbol, item]) => {
-                let currentPrice: number | null = null;
-                let todayPnl: number | null = null;
-
-                try {
-                  const quote = await getStockPrice(symbol);
-                  if (typeof quote?.price === "number" && Number.isFinite(quote.price)) currentPrice = quote.price;
-                  if (typeof quote?.change === "number" && Number.isFinite(quote.change)) todayPnl = item.qty * quote.change;
-                } catch { }
-
-                const avgCost = item.cost / item.qty;
-                const displayPrice = currentPrice ?? avgCost;
-                const marketValue = item.qty * displayPrice;
-                const pnl = currentPrice == null ? 0 : marketValue - item.cost;
-
-                return {
-                  symbol,
-                  name: item.name,
-                  quantity: item.qty,
-                  avgCost,
-                  currentPrice,
-                  marketValue,
-                  todayPnl,
-                  pnl,
-                  returnPct: item.cost <= 0 ? 0 : (pnl / item.cost) * 100,
-                  portfolioId: portfolio.id,
-                  portfolioName: portfolio.name,
-                  assetType: portfolio.type || "OTHER",
-                };
-              })
-          );
-
-          nextPositions.push(...priced);
-          const value = priced.length ? priced.reduce((sum, item) => sum + (item.marketValue || 0), 0) : null;
-          const pnl = priced.length ? priced.reduce((sum, item) => sum + (item.pnl || 0), 0) : null;
-          const cost = priced.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
-          nextStats[portfolio.id] = { id: portfolio.id, value, pnl, returnPct: pnl == null || cost <= 0 ? null : (pnl / cost) * 100 };
-        } catch { }
+          const txs = await getTransactions(portfolio.id);
+          return { portfolio, txs };
+        } catch {
+          return { portfolio, txs: [] };
+        }
       })
     );
+
+    portfolioTxns.forEach(({ portfolio, txs }) => {
+      const holdings: Record<string, { name: string; qty: number; cost: number }> = {};
+
+      txs.forEach((tx: any) => {
+        const symbol = String(tx.assetSymbol || "").toUpperCase();
+        if (!symbol) return;
+
+        const quantity = Number(tx.quantity || 0);
+        const price = Number(tx.price || 0);
+        const side = String(tx.type || "").toUpperCase();
+        const dateKey = String(tx.transactionDate || tx.date || tx.createdAt || "").slice(0, 10);
+
+        if (!holdings[symbol]) holdings[symbol] = { name: tx.assetName || symbol, qty: 0, cost: 0 };
+        if (dateKey) timeline.set(dateKey, (timeline.get(dateKey) || 0) + (side === "SELL" ? -quantity * price : quantity * price));
+
+        if (side === "BUY") {
+          holdings[symbol].qty += quantity;
+          holdings[symbol].cost += quantity * price;
+        }
+
+        if (side === "SELL") {
+          const avg = holdings[symbol].qty > 0 ? holdings[symbol].cost / holdings[symbol].qty : price;
+          holdings[symbol].qty -= quantity;
+          holdings[symbol].cost = Math.max(0, holdings[symbol].cost - avg * quantity);
+        }
+      });
+
+      const priced = Object.entries(holdings)
+        .filter(([, item]) => item.qty > 0)
+        .map(([symbol, item]) => {
+          allSymbols.add(symbol);
+          const avgCost = item.cost / item.qty;
+          return {
+            symbol,
+            name: item.name,
+            quantity: item.qty,
+            avgCost,
+            currentPrice: avgCost, // Instant render using cost basis
+            marketValue: item.cost,
+            todayPnl: 0,
+            pnl: 0,
+            returnPct: 0,
+            portfolioId: portfolio.id,
+            portfolioName: portfolio.name,
+            assetType: portfolio.type || "OTHER",
+          };
+        });
+
+      nextPositions.push(...priced);
+      const value = priced.reduce((sum, item) => sum + (item.marketValue || 0), 0);
+      nextStats[portfolio.id] = { id: portfolio.id, value, pnl: 0, returnPct: 0 };
+    });
 
     let cumulative = 0;
     const points = [...timeline.entries()]
@@ -319,16 +248,75 @@ export default function Page() {
         return { label: label.slice(5), value: cumulative };
       });
 
-    return { positions: nextPositions, portfolioStats: nextStats, performance: points };
+    // Render immediately
+    setPositions(nextPositions);
+    setPortfolioStats(nextStats);
+    setPerformance(points);
+
+    const symbolsArr = Array.from(allSymbols);
+    if (symbolsArr.length === 0) {
+      return;
+    }
+
+    const quoteEntries = await Promise.all(
+      symbolsArr.map(async symbol => [symbol, await getStockPrice(symbol)] as const)
+    );
+
+    const quotesBySymbol = new Map(
+      quoteEntries.filter(([, quote]) => quote && typeof quote.price === "number")
+    );
+
+    if (quotesBySymbol.size === 0) {
+      return;
+    }
+
+    const resolvedPositions = nextPositions.map(pos => {
+      const quote = quotesBySymbol.get(pos.symbol);
+      if (!quote) {
+        return pos;
+      }
+
+      const marketValue = pos.quantity * quote.price;
+      const costBasis = pos.quantity * pos.avgCost;
+      const pnl = marketValue - costBasis;
+      const returnPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+
+      return {
+        ...pos,
+        currentPrice: quote.price,
+        marketValue,
+        todayPnl: typeof quote.change === "number" ? pos.quantity * quote.change : 0,
+        pnl,
+        returnPct,
+      };
+    });
+
+    const resolvedStats = portfolioData.reduce<Record<string, PortfolioStat>>((acc, portfolio) => {
+      const pPositions = resolvedPositions.filter(pos => pos.portfolioId === portfolio.id);
+      const value = pPositions.reduce((sum, pos) => sum + (pos.marketValue || 0), 0);
+      const totalCostVal = pPositions.reduce((sum, pos) => sum + (pos.quantity * pos.avgCost), 0);
+      const pnl = value - totalCostVal;
+
+      acc[portfolio.id] = {
+        id: portfolio.id,
+        value,
+        pnl,
+        returnPct: totalCostVal > 0 ? (pnl / totalCostVal) * 100 : 0,
+      };
+      return acc;
+    }, {});
+
+    setPositions(resolvedPositions);
+    setPortfolioStats(resolvedStats);
   }
 
   const pricedPositions = useMemo(() => positions.filter(item => item.marketValue != null), [positions]);
-  const portfolioValue = positions.length ? positions.reduce((sum, item) => sum + (item.marketValue || 0), 0) : null;
-  const totalCost = positions.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
-  const totalPnl = positions.length ? positions.reduce((sum, item) => sum + (item.pnl || 0), 0) : null;
-  const todayPnl = positions.length ? positions.reduce((sum, item) => sum + (item.todayPnl || 0), 0) : null;
+  const portfolioValue = pricedPositions.length ? pricedPositions.reduce((sum, item) => sum + (item.marketValue || 0), 0) : null;
+  const totalCost = pricedPositions.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
+  const totalPnl = pricedPositions.length ? pricedPositions.reduce((sum, item) => sum + (item.pnl || 0), 0) : null;
+  const todayPnl = pricedPositions.some(item => item.todayPnl != null) ? pricedPositions.reduce((sum, item) => sum + (item.todayPnl || 0), 0) : null;
   const totalReturn = totalPnl == null || totalCost <= 0 ? null : (totalPnl / totalCost) * 100;
-  const largestWeight = portfolioValue ? Math.max(0, ...positions.map(item => ((item.marketValue || 0) / portfolioValue) * 100)) : null;
+  const largestWeight = portfolioValue ? Math.max(0, ...pricedPositions.map(item => ((item.marketValue || 0) / portfolioValue) * 100)) : null;
 
   const allocation = useMemo(() => {
     if (!portfolioValue) return [];
@@ -347,13 +335,10 @@ export default function Page() {
     try {
       const created = await createPortfolio(portfolioForm.name.trim(), portfolioForm.currency, portfolioForm.type);
       const next = [...portfolios, created];
-      const dashboardData = await loadDashboardData(next);
       setPortfolios(next);
-      setPositions(dashboardData.positions);
-      setPortfolioStats(dashboardData.portfolioStats);
-      setPerformance(dashboardData.performance);
       setPortfolioForm({ name: "", currency: "USD", type: "STOCKS" });
       setModal(null);
+      await loadDashboardData(next);
     } catch (e: any) {
       setError(e.message);
     }
@@ -388,11 +373,8 @@ export default function Page() {
     try {
       await deletePortfolio(id);
       const next = portfolios.filter(item => item.id !== id);
-      const dashboardData = await loadDashboardData(next);
       setPortfolios(next);
-      setPositions(dashboardData.positions);
-      setPortfolioStats(dashboardData.portfolioStats);
-      setPerformance(dashboardData.performance);
+      await loadDashboardData(next);
     } catch (e: any) {
       setError(e.message);
     }
@@ -418,31 +400,62 @@ export default function Page() {
     }
   }
 
-  async function loadNews() {
+  async function loadNews(queryOverride?: string) {
     setNewsLoading(true);
-    const symbols = new Set<string>();
+    const assetDirectory = new Map<string, string>();
+    const normalizedQuery = (queryOverride ?? newsQuery).trim().toLowerCase();
 
     await Promise.all(portfolios.map(async portfolio => {
       try {
         const transactions = await getTransactions(portfolio.id);
-        transactions.forEach(tx => symbols.add(tx.assetSymbol));
-      } catch { }
+        transactions.forEach(tx => {
+          const symbol = String(tx.assetSymbol || "").toUpperCase();
+          if (!symbol) return;
+          assetDirectory.set(symbol, tx.assetName || symbol);
+        });
+      } catch {}
     }));
 
     await Promise.all(watchlists.map(async watchlist => {
       try {
         const items = await getWatchlistItems(watchlist.id);
-        items.forEach(item => symbols.add(item.assetSymbol));
-      } catch { }
+        items.forEach(item => {
+          const symbol = String(item.assetSymbol || "").toUpperCase();
+          if (!symbol) return;
+          assetDirectory.set(symbol, item.assetName || symbol);
+        });
+      } catch {}
     }));
 
+    const allAssets = [...assetDirectory.entries()]
+      .map(([symbol, name]) => ({ symbol, name }))
+      .sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+    setNewsAssets(allAssets);
+
+    const targetSymbols = (normalizedQuery
+      ? allAssets.filter((asset) => {
+          const haystack = `${asset.symbol} ${asset.name}`.toLowerCase();
+          return haystack.includes(normalizedQuery);
+        })
+      : allAssets
+    )
+      .map((asset) => asset.symbol)
+      .slice(0, 8);
+
+    if (targetSymbols.length === 0) {
+      setNewsItems([]);
+      setNewsLoading(false);
+      return;
+    }
+
     const fetched: NewsItem[] = [];
-    await Promise.all([...symbols].slice(0, 8).map(async symbol => {
+    await Promise.all(targetSymbols.map(async symbol => {
       try {
         const res = await fetch(`/api/stock-news?symbol=${encodeURIComponent(symbol)}`);
         const data = await res.json();
         if (Array.isArray(data)) fetched.push(...data);
-      } catch { }
+      } catch {}
     }));
 
     const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
@@ -458,6 +471,7 @@ export default function Page() {
   function openFirstPortfolio() {
     if (!portfolios.length) {
       setError("Create a portfolio before adding a transaction.");
+      setModal("portfolio");
       return;
     }
     window.location.href = `/portfolio/${portfolios[0].id}`;
@@ -470,245 +484,118 @@ export default function Page() {
     input.onchange = () => {
       if (input.files?.[0]) setError(`Selected ${input.files[0].name}. CSV import API is not wired yet.`);
     };
-    input.click();
+                  input.click();
   }
 
   return (
-    <div className="min-h-screen bg-[#050816] text-slate-100">
-      <Tabs orientation="vertical" value={active} onValueChange={value => {
-        const tab = value as Tab;
-        setActive(tab);
-        if (tab === "news" && newsItems.length === 0) loadNews();
-      }}>
-        <div className="flex">
-          <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-white/10 bg-[#070b18]/95 p-5 lg:block backdrop-blur-sm">
-            <div className="mb-8">
-              <div className="flex items-center gap-3">
-                <div className="grid h-9 w-9 place-items-center rounded-lg rainbow-bg text-white">
-                  <TrendingUp className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="font-semibold rainbow-text">Investment</p>
-                  <p className="text-xs text-slate-500">Institutional Console</p>
-                </div>
-              </div>
+    <div className="min-h-screen text-slate-100 flex antigravity-volumetric">
+
+      <div className="flex flex-1 min-h-screen overflow-hidden">
+      <main className="w-full min-w-0 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-7xl space-y-6">
+
+          {error && (
+            <div className="antigravity-panel p-4 text-sm text-red-400 border border-red-500/20 bg-red-500/5 backdrop-blur">
+              {error}
             </div>
+          )}
 
-            <TabsList className="grid h-auto w-full gap-2 bg-transparent p-0">
-              {navItems.map(({ id, label, Icon }) => (
-                <TabsTrigger key={id} value={id} className="h-10 justify-start gap-2 px-3 transition-all duration-200 data-active:bg-[#54a0ff]/10 data-active:text-[#54a0ff] hover:bg-white/5">
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-
-            <div className="mt-6 space-y-2">
-              <Button variant="ghost" className="w-full justify-start text-slate-400 hover:text-[#0abf53] transition-colors" onClick={() => (window.location.href = "/market")}>
-                <TrendingUp className="h-4 w-4" />
-                Market
-              </Button>
-              <Button variant="ghost" className="w-full justify-start text-slate-400 hover:text-cyan-300 transition-colors" onClick={() => (window.location.href = "/market-calendar")}>
-                <CalendarDays className="h-4 w-4" />
-                Market Calendar
-              </Button>
-              <Button variant="ghost" className="w-full justify-start text-slate-400 hover:text-[#c44dff] transition-colors" onClick={() => (window.location.href = "/analysis")}>
-                <Bot className="h-4 w-4" />
-                AI Analysis
-              </Button>
-            </div>
-
-            <Button
-              variant="ghost"
-              className="absolute bottom-5 left-5 right-5 justify-start text-red-300 hover:text-red-200"
-              onClick={() => {
-                localStorage.removeItem("token");
-                window.location.href = "/login";
-              }}
-            >
-              <LogOut className="h-4 w-4" />
-              Logout
-            </Button>
-          </aside>
-
-          <main className="w-full px-4 py-5 lg:ml-64 lg:px-8">
-            <div className="mx-auto max-w-7xl space-y-6">
-              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-                <Card className="border-white/10 bg-[radial-gradient(ellipse_at_top_left,rgba(196,77,255,0.12),transparent_38%),radial-gradient(ellipse_at_bottom_right,rgba(84,160,255,0.1),transparent_38%),linear-gradient(135deg,#0f172a,#050816)] overflow-hidden">
-                  <CardContent className="flex flex-col gap-5 p-6 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                      <Badge variant="outline" className="border-[#54a0ff]/30 text-[#54a0ff]">🌈 Rainbow Edition</Badge>
-                      <h1 className="mt-4 text-3xl font-semibold tracking-tight lg:text-5xl rainbow-text">Financial Dashboard</h1>
-                      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-                        Portfolio intelligence, live holdings, allocation, risk, goals and market news in one premium dark workspace.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button onClick={openFirstPortfolio}>
-                        <FilePlus className="h-4 w-4" />
-                        Add Transaction
-                      </Button>
-                      <Button variant="outline" onClick={() => (window.location.href = "/market")}>
-                        <Plus className="h-4 w-4" />
-                        Add Asset
-                      </Button>
-                      <Button variant="outline" onClick={importCsv}>
-                        <Upload className="h-4 w-4" />
-                        Import CSV
-                      </Button>
-                      <Button variant="outline" onClick={() => window.print()}>
-                        <Download className="h-4 w-4" />
-                        Export PDF
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-
-              {error && (
-                <Card className="border-red-500/20 bg-red-500/10">
-                  <CardContent className="flex items-center gap-3 p-4 text-sm text-red-200">
-                    <ShieldAlert className="h-4 w-4" />
-                    {error}
-                  </CardContent>
-                </Card>
-              )}
-
-              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {loading ? (
-                  Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-32 bg-white/10" />)
-                ) : (
-                  [
-                    { label: "Portfolio Value", value: fmtMoney(portfolioValue), tone: "text-white", border: "border-l-rainbow-blue" },
-                    { label: "Today P/L", value: fmtSignedMoney(todayPnl), tone: todayPnl != null && todayPnl < 0 ? "text-[#ff6b6b]" : "text-[#0abf53]", border: "border-l-rainbow-green" },
-                    { label: "Total Return", value: fmtPct(totalReturn), tone: totalReturn != null && totalReturn < 0 ? "text-[#ff6b6b]" : "text-[#ff9f43]", border: "border-l-rainbow-orange" },
-                    { label: "Cost Basis", value: fmtMoney(totalCost), tone: "text-[#c44dff]", border: "border-l-rainbow-violet" },
-                  ].map(item => (
-                    <Card key={item.label} className={`border-white/10 bg-white/[0.03] ${item.border} transition-all duration-300 hover:bg-white/[0.05] hover:shadow-lg`}>
-                      <CardHeader className="pb-2">
-                        <CardDescription>{item.label}</CardDescription>
-                        <CardTitle className={`text-2xl ${item.tone}`}>{item.value}</CardTitle>
-                      </CardHeader>
-                    </Card>
-                  ))
-                )}
-              </section>
-
-              <div className="grid gap-6 xl:grid-cols-[1.65fr_1fr]">
-                <Card className="border-white/10 bg-white/[0.03]">
-                  <CardHeader>
-                    <CardTitle>Portfolio Performance</CardTitle>
-                    <CardDescription>Invested capital trend from recorded transactions.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="h-80">
-                    {loading ? (
-                      <Skeleton className="h-full bg-white/10" />
-                    ) : performance.length === 0 ? (
-                      <div className="grid h-full place-items-center text-sm text-slate-500">No transaction history yet.</div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={performance}>
-                          <defs>
-                            <linearGradient id="equityFill" x1="0" x2="0" y1="0" y2="1">
-                              <stop offset="0%" stopColor="#c44dff" stopOpacity={0.3} />
-                              <stop offset="30%" stopColor="#54a0ff" stopOpacity={0.2} />
-                              <stop offset="60%" stopColor="#0abf53" stopOpacity={0.1} />
-                              <stop offset="100%" stopColor="#feca57" stopOpacity={0.02} />
-                            </linearGradient>
-                            <linearGradient id="equityStroke" x1="0" x2="1" y1="0" y2="0">
-                              <stop offset="0%" stopColor="#54a0ff" />
-                              <stop offset="50%" stopColor="#c44dff" />
-                              <stop offset="100%" stopColor="#ff6b6b" />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid stroke="#1e293b" strokeDasharray="2 4" vertical={false} />
-                          <XAxis dataKey="label" stroke="#64748b" tickLine={false} axisLine={false} />
-                          <YAxis stroke="#64748b" tickLine={false} axisLine={false} tickFormatter={value => `$${Number(value).toLocaleString()}`} />
-                          <Tooltip contentStyle={{ background: "#020617", border: "1px solid #1e293b", borderRadius: 12 }} formatter={value => fmtMoney(Number(value ?? 0))} />
-                          <Area type="monotone" dataKey="value" stroke="url(#equityStroke)" strokeWidth={2.5} fill="url(#equityFill)" />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="border-white/10 bg-white/[0.03]">
-                  <CardHeader>
-                    <CardTitle>Asset Allocation</CardTitle>
-                    <CardDescription>Current market-value distribution.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {loading ? (
-                      <Skeleton className="h-64 bg-white/10" />
-                    ) : allocation.length === 0 ? (
-                      <div className="grid h-64 place-items-center text-sm text-slate-500">No priced holdings yet.</div>
-                    ) : (
-                      <>
-                        <div className="h-52">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie data={allocation} dataKey="value" nameKey="name" innerRadius={58} outerRadius={88}>
-                                {allocation.map(item => <Cell key={item.name} fill={item.color} />)}
-                              </Pie>
-                              <Tooltip contentStyle={{ background: "#020617", border: "1px solid #1e293b", borderRadius: 12 }} formatter={value => fmtMoney(Number(value ?? 0))} />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </div>
-                        {allocation.map(item => (
-                          <div key={item.name} className="flex items-center justify-between text-sm">
-                            <span className="flex items-center gap-2 text-slate-300">
-                              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                              {item.name}
-                            </span>
-                            <span className="font-medium text-white">{item.weight.toFixed(1)}%</span>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card className="border-white/10 bg-white/[0.03]">
-                <CardHeader>
-                  <CardTitle>Risk Metrics</CardTitle>
-                  <CardDescription>Drawdown, exposure and concentration checks.</CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-4">
-                  {[
-                    { label: "Drawdown", value: totalReturn == null ? "N/A" : fmtPct(Math.min(totalReturn, 0)), tone: totalReturn != null && totalReturn < 0 ? "text-red-400" : "text-slate-400" },
-                    { label: "Exposure", value: portfolioValue == null ? "N/A" : "100%", tone: "text-emerald-400" },
-                    { label: "Largest Position", value: largestWeight == null ? "N/A" : `${largestWeight.toFixed(1)}%`, tone: largestWeight != null && largestWeight > 35 ? "text-yellow-400" : "text-emerald-400" },
-                    { label: "Sharpe Ratio", value: "N/A", tone: "text-slate-400" },
-                  ].map(metric => (
-                    <Card key={metric.label} className="border-white/10 bg-slate-950/70" size="sm">
-                      <CardHeader>
-                        <CardDescription>{metric.label}</CardDescription>
-                        <CardTitle className={metric.tone}>{metric.value}</CardTitle>
-                      </CardHeader>
-                    </Card>
+          <div className="antigravity-panel antigravity-float-slow overflow-hidden">
+            {/* Embedded Header Controls */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-white/5 p-6 gap-4 bg-white/[0.01]">
+              <div className="flex items-center gap-6">
+                <h2 className="text-xl font-black text-white tracking-widest uppercase">Console</h2>
+                
+                {/* Horizontal Tab Buttons inside Table Card */}
+                <div className="flex bg-white/5 p-1 rounded-lg border border-white/5">
+                  {(["portfolios", "watchlists", "goals", "news"] as Tab[]).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => {
+                        setActive(tab);
+                        if (tab === "news" && newsItems.length === 0) loadNews();
+                      }}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-300 ${
+                        active === tab
+                          ? "bg-white/10 text-white shadow-sm"
+                          : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {tab === "portfolios"
+                        ? "Holdings"
+                        : tab === "watchlists"
+                        ? "Watchlist"
+                        : tab === "goals"
+                        ? "Goals"
+                        : "News"}
+                    </button>
                   ))}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
-              <TabsContent value="portfolios" className="space-y-6">
-                <Card className="border-white/10 bg-white/[0.03]">
-                  <CardHeader>
-                    <CardTitle>Current Holdings</CardTitle>
-                    <CardDescription>Positions sorted by market value.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {loading ? (
-                      <Skeleton className="h-72 bg-white/10" />
-                    ) : pricedPositions.length === 0 ? (
-                      <div className="py-12 text-center text-sm text-slate-500">No priced holdings yet.</div>
-                    ) : (
+              {/* Action Buttons in Header */}
+              <div className="flex items-center gap-2">
+                {active === "portfolios" && (
+                  <>
+                    <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={openFirstPortfolio}>
+                      <Plus className="h-3 w-3 mr-1" /> Add Transaction
+                    </Button>
+                    <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={importCsv}>
+                      <Upload className="h-3 w-3 mr-1" /> Import CSV
+                    </Button>
+                  </>
+                )}
+                {active === "watchlists" && (
+                  <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={() => setModal("watchlist")}>
+                    <Plus className="h-3 w-5" /> Add Watchlist
+                  </Button>
+                )}
+                {active === "goals" && (
+                  <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={() => setModal("goal")}>
+                    <Plus className="h-3 w-5" /> Add Goal
+                  </Button>
+                )}
+                {active === "news" && (
+                  <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={() => loadNews()} disabled={newsLoading}>
+                    <RefreshCw className={`h-3 w-3 mr-1 ${newsLoading ? "animate-spin" : ""}`} /> Refresh
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Table Content */}
+            <div className="p-6">
+              {loading ? (
+                <div className="space-y-3 py-6">
+                  <Skeleton className="h-6 w-full bg-white/5" />
+                  <Skeleton className="h-10 w-full bg-white/5" />
+                  <Skeleton className="h-10 w-full bg-white/5" />
+                </div>
+              ) : active === "portfolios" ? (
+                portfolios.length === 0 && pricedPositions.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-slate-500 font-medium">No priced holdings yet.</div>
+                ) : (
+                  <div>
+                    {/* Current Holdings Table */}
+                    <div className="overflow-auto max-h-[600px] pr-2 custom-scrollbar">
                       <Table>
-                        <TableHeader>
-                          <TableRow className="border-white/10">
-                            {["Symbol", "Name", "Qty", "Avg Cost", "Current", "Market Value", "P/L", "Return", "Weight"].map(head => (
-                              <TableHead key={head} className={head === "Symbol" || head === "Name" ? "" : "text-right"}>{head}</TableHead>
-                            ))}
+                        <TableHeader className="sticky top-0 bg-[#0a0a0f]/90 backdrop-blur-md z-10 shadow-sm shadow-white/5">
+                          <TableRow className="border-white/5 hover:bg-transparent">
+                            {["Mã", "Tên", "Số lượng", "Giá vốn", "Giá hiện tại", "Giá trị TT", "P/L", "Lợi nhuận", "Tỷ trọng"].map(head => {
+                              let stickyClass = "";
+                              if (head === "Mã") stickyClass = "sticky left-0 bg-[#0c0c14] z-30 w-[100px] min-w-[100px] max-w-[100px] border-r border-white/5";
+                              if (head === "Tên") stickyClass = "sticky left-[100px] bg-[#0c0c14] z-30 w-[150px] min-w-[150px] max-w-[150px] border-r border-white/5";
+                              return (
+                                <TableHead
+                                  key={head}
+                                  className={`text-slate-400 font-bold text-xs uppercase tracking-wider py-4 whitespace-normal break-words ${
+                                    head === "Mã" || head === "Tên" ? "" : "text-right min-w-[120px]"
+                                  } ${stickyClass}`}
+                                >
+                                  {head}
+                                </TableHead>
+                              );
+                            })}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -717,170 +604,185 @@ export default function Page() {
                             const negative = position.pnl != null && position.pnl < 0;
 
                             return (
-                              <TableRow key={`${position.portfolioId}-${position.symbol}`} className="border-white/10">
-                                <TableCell className="font-semibold text-white">{position.symbol}</TableCell>
-                                <TableCell className="text-slate-300">{position.name}</TableCell>
-                                <TableCell className="min-w-[150px] whitespace-nowrap text-right font-mono tabular-nums text-slate-300" title={String(position.quantity)}>{fmtQuantity(position.quantity)}</TableCell>
-                                <TableCell className="text-right text-slate-300">{fmtMoney(position.avgCost)}</TableCell>
-                                <TableCell className="text-right text-slate-300">{fmtMoney(position.currentPrice)}</TableCell>
-                                <TableCell className="text-right font-medium text-white">{fmtMoney(position.marketValue)}</TableCell>
-                                <TableCell className="text-right">
-                                  <Badge variant={negative ? "destructive" : "default"} className={negative ? "" : "bg-emerald-500/15 text-emerald-300"}>
+                              <TableRow key={`${position.portfolioId}-${position.symbol}`} className="border-white/5 hover:bg-white/[0.02] transition-colors group">
+                                <TableCell className="font-semibold text-white py-4 whitespace-normal break-words sticky left-0 bg-[#0a0a0f] group-hover:bg-white/[0.02] z-20 w-[100px] min-w-[100px] max-w-[100px] border-r border-white/5">{position.symbol}</TableCell>
+                                <TableCell className="text-slate-300 py-4 whitespace-normal break-words sticky left-[100px] bg-[#0a0a0f] group-hover:bg-white/[0.02] z-20 w-[150px] min-w-[150px] max-w-[150px] border-r border-white/5">{position.name}</TableCell>
+                                <TableCell className="text-right text-slate-300 py-4 whitespace-normal min-w-[120px] break-words">{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 6 })}</TableCell>
+                                <TableCell className="text-right text-slate-300 py-4 whitespace-normal min-w-[120px] break-words">{fmtMoney(position.avgCost)}</TableCell>
+                                <TableCell className="text-right text-slate-300 py-4 whitespace-normal min-w-[120px] break-words">{fmtMoney(position.currentPrice)}</TableCell>
+                                <TableCell className="text-right font-medium text-white py-4 whitespace-normal min-w-[120px] break-words">{fmtMoney(position.marketValue)}</TableCell>
+                                <TableCell className="text-right py-4 whitespace-normal min-w-[120px] break-words">
+                                  <Badge variant={negative ? "destructive" : "default"} className={`font-bold ${negative ? "" : "bg-emerald-500/10 text-emerald-400 border-none"}`}>
                                     {fmtSignedMoney(position.pnl)}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  <Badge variant={negative ? "destructive" : "default"} className={negative ? "" : "bg-emerald-500/15 text-emerald-300"}>
+                                <TableCell className="text-right py-4 whitespace-normal min-w-[120px] break-words">
+                                  <Badge variant={negative ? "destructive" : "default"} className={`font-bold ${negative ? "" : "bg-emerald-500/10 text-emerald-400 border-none"}`}>
                                     {fmtPct(position.returnPct)}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="text-right text-slate-300">{weight == null ? "N/A" : `${weight.toFixed(1)}%`}</TableCell>
+                                <TableCell className="text-right text-slate-300 py-4 whitespace-normal min-w-[120px] break-words">{weight == null ? "N/A" : `${weight.toFixed(1)}%`}</TableCell>
                               </TableRow>
                             );
                           })}
                         </TableBody>
                       </Table>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="border-white/10 bg-white/[0.03]">
-                  <CardHeader className="flex-row items-center justify-between">
-                    <div>
-                      <CardTitle>Portfolio Ranking</CardTitle>
-                      <CardDescription>Ranked by live total return.</CardDescription>
                     </div>
-                    <Button onClick={() => setModal("portfolio")}>
-                      <Plus className="h-4 w-4" />
-                      Add
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {portfolios.length === 0 && <div className="py-8 text-center text-sm text-slate-500">No portfolios yet.</div>}
-                    {portfolios.map(portfolio => {
-                      const stat = portfolioStats[portfolio.id];
-                      const negative = stat?.returnPct != null && stat.returnPct < 0;
-                      return (
-                        <Card key={portfolio.id} className="border-white/10 bg-slate-950/70" size="sm">
-                          <CardContent className="flex items-center justify-between p-4">
-                            <button onClick={() => (window.location.href = `/portfolio/${portfolio.id}`)} className="text-left">
-                              <p className="font-semibold text-white">{portfolio.name}</p>
-                              <p className="mt-1 text-xs text-slate-500">{portfolio.type} · {portfolio.baseCurrency} · {fmtMoney(stat?.value)}</p>
-                            </button>
-                            <div className="flex items-center gap-3">
-                              <Badge variant={negative ? "destructive" : "default"} className={negative ? "" : "bg-emerald-500/15 text-emerald-300"}>
-                                {fmtPct(stat?.returnPct)}
-                              </Badge>
-                              <Button variant="ghost" size="icon" onClick={() => handleDeletePortfolio(portfolio.id)} aria-label="Delete portfolio">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+
+                    {/* Portfolios List */}
+                    <div className="mt-8 border-t border-white/5 pt-8">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-sm font-bold text-white tracking-widest uppercase">Portfolios</h3>
+                        <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={() => setModal("portfolio")}>
+                          <Plus className="h-3 w-5" /> Add
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {portfolios.map(portfolio => {
+                          const stat = portfolioStats[portfolio.id];
+                          const negative = stat?.returnPct != null && stat.returnPct < 0;
+                          return (
+                            <div key={portfolio.id} className="antigravity-panel p-4 flex items-center justify-between hover:bg-white/[0.01] transition-all bg-transparent">
+                              <button onClick={() => (window.location.href = `/portfolio/${portfolio.id}`)} className="text-left">
+                                <p className="font-semibold text-white">{portfolio.name}</p>
+                                <p className="mt-1 text-xs text-slate-500">{portfolio.type} · {portfolio.baseCurrency} · {fmtMoney(stat?.value)}</p>
+                              </button>
+                              <div className="flex items-center gap-3">
+                                <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={() => (window.location.href = `/portfolio/${portfolio.id}`)}>
+                                  <Eye className="h-3 w-3 mr-1" /> View
+                                </Button>
+                                <Badge variant={negative ? "destructive" : "default"} className={`font-bold ${negative ? "" : "bg-emerald-500/10 text-emerald-400 border-none"}`}>
+                                  {fmtPct(stat?.returnPct)}
+                                </Badge>
+                                <Button variant="ghost" size="icon" className="text-slate-500 hover:text-red-400 transition-colors bg-transparent border-none" onClick={() => handleDeletePortfolio(portfolio.id)} aria-label="Delete portfolio">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
                             </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="watchlists">
-                <Card className="border-white/10 bg-white/[0.03]">
-                  <CardHeader className="flex-row items-center justify-between">
-                    <div>
-                      <CardTitle>Watchlists</CardTitle>
-                      <CardDescription>Symbols tracked outside active holdings.</CardDescription>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <Button onClick={() => setModal("watchlist")}><Plus className="h-4 w-4" />Add</Button>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {watchlists.length === 0 && <div className="py-8 text-center text-sm text-slate-500">No watchlists yet.</div>}
+                  </div>
+                )
+              ) : active === "watchlists" ? (
+                watchlists.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-slate-500 font-medium">No watchlists yet.</div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
                     {watchlists.map(watchlist => (
-                      <Card key={watchlist.id} className="border-white/10 bg-slate-950/70" size="sm">
-                        <CardContent className="flex items-center justify-between p-4">
-                          <p className="font-semibold text-white">{watchlist.name}</p>
-                          <div className="flex gap-2">
-                            <Button variant="outline" size="sm" onClick={() => (window.location.href = `/watchlist/${watchlist.id}`)}>View</Button>
-                            <Button variant="destructive" size="sm" onClick={() => handleDeleteWatchlist(watchlist.id)}>Delete</Button>
-                          </div>
-                        </CardContent>
-                      </Card>
+                      <div key={watchlist.id} className="antigravity-panel p-4 flex items-center justify-between hover:bg-white/[0.01] transition-all bg-transparent">
+                        <p className="font-semibold text-white">{watchlist.name}</p>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={() => (window.location.href = `/watchlist/${watchlist.id}`)}>View</Button>
+                          <Button variant="ghost" size="sm" className="text-slate-500 hover:text-red-400 hover:bg-red-500/10 border border-transparent transition-colors" onClick={() => handleDeleteWatchlist(watchlist.id)}>Delete</Button>
+                        </div>
+                      </div>
                     ))}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="goals">
-                <Card className="border-white/10 bg-white/[0.03]">
-                  <CardHeader className="flex-row items-center justify-between">
-                    <div>
-                      <CardTitle>Goals</CardTitle>
-                      <CardDescription>Progress toward target capital milestones.</CardDescription>
-                    </div>
-                    <Button onClick={() => setModal("goal")}><Plus className="h-4 w-4" />Add</Button>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {goals.length === 0 && <div className="py-8 text-center text-sm text-slate-500">No goals yet.</div>}
+                  </div>
+                )
+              ) : active === "goals" ? (
+                goals.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-slate-500 font-medium">No goals yet.</div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2">
                     {goals.map(goal => {
                       const progress = goal.targetAmount > 0 ? Math.min(100, Math.round((goal.currentAmount / goal.targetAmount) * 100)) : 0;
                       return (
-                        <Card key={goal.id} className="border-white/10 bg-slate-950/70" size="sm">
-                          <CardContent className="p-4">
-                            <div className="mb-3 flex items-start justify-between">
-                              <div>
-                                <p className="font-semibold text-white">{goal.name}</p>
-                                <p className="text-xs text-slate-500">{goal.targetDate} · {goal.status}</p>
-                              </div>
-                              <Button variant="destructive" size="sm" onClick={() => handleDeleteGoal(goal.id)}>Delete</Button>
+                        <div key={goal.id} className="antigravity-panel p-5 flex flex-col hover:bg-white/[0.01] transition-all bg-transparent">
+                          <div className="mb-4 flex items-start justify-between">
+                            <div>
+                              <p className="font-semibold text-white">{goal.name}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">{goal.targetDate} · {goal.status}</p>
                             </div>
-                            <div className="h-2 rounded-full bg-slate-800">
-                              <div className="h-2 rounded-full bg-cyan-400" style={{ width: `${progress}%` }} />
-                            </div>
-                            <div className="mt-2 flex justify-between text-xs text-slate-500">
-                              <span>{goal.currentAmount.toLocaleString()} {goal.currency}</span>
-                              <span>{progress}% · {goal.targetAmount.toLocaleString()} {goal.currency}</span>
-                            </div>
-                          </CardContent>
-                        </Card>
+                            <Button variant="ghost" size="sm" className="text-slate-500 hover:text-red-400 transition-colors bg-transparent border-none" onClick={() => handleDeleteGoal(goal.id)}>Delete</Button>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                            <div className="h-full bg-white/40 rounded-full" style={{ width: `${progress}%` }} />
+                          </div>
+                          <div className="mt-3 flex justify-between text-xs text-slate-500 font-semibold">
+                            <span>{goal.currentAmount.toLocaleString()} {goal.currency}</span>
+                            <span>{progress}% / {goal.targetAmount.toLocaleString()} {goal.currency}</span>
+                          </div>
+                        </div>
                       );
                     })}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="news">
-                <Card className="border-white/10 bg-white/[0.03]">
-                  <CardHeader className="flex-row items-center justify-between">
-                    <div>
-                      <CardTitle>Portfolio News</CardTitle>
-                      <CardDescription>AI-ready sentiment and impact labels.</CardDescription>
+                  </div>
+                )
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-white/[0.02] p-4 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-white">Tin theo tài sản đầu tư</p>
+                      <p className="text-xs text-slate-400">
+                        Gõ mã hoặc tên công ty như <span className="font-semibold text-slate-200">AAPL</span> hoặc <span className="font-semibold text-slate-200">Apple</span> để lọc đúng news bạn cần.
+                      </p>
                     </div>
-                    <Button variant="outline" onClick={loadNews}><RefreshCw className="h-4 w-4" />Refresh</Button>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {newsLoading && Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-24 bg-white/10" />)}
-                    {!newsLoading && newsItems.length === 0 && <div className="py-8 text-center text-sm text-slate-500">No recent portfolio news.</div>}
+                    <div className="flex w-full gap-2 md:max-w-xl">
+                      <Input
+                        value={newsQuery}
+                        onChange={(e) => setNewsQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            loadNews(e.currentTarget.value);
+                          }
+                        }}
+                        placeholder="Tìm theo mã hoặc tên tài sản"
+                        className="border-white/10 bg-black/30 text-white placeholder:text-slate-500"
+                      />
+                      <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={() => loadNews()}>
+                        Tìm
+                      </Button>
+                    </div>
+                  </div>
+
+                  {newsAssets.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {newsAssets.slice(0, 8).map((asset) => (
+                        <button
+                          key={asset.symbol}
+                          onClick={() => {
+                            setNewsQuery(asset.name);
+                            loadNews(asset.name);
+                          }}
+                          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300 transition-colors hover:border-white/20 hover:bg-white/10 hover:text-white"
+                        >
+                          {asset.symbol}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {newsItems.length === 0 ? (
+                    <div className="py-12 text-center text-sm font-medium text-slate-500">
+                      {newsQuery.trim() ? "Chưa tìm thấy news cho tài sản này." : "Chưa có tin mới cho danh mục hiện tại."}
+                    </div>
+                  ) : (
+                    <div className="max-h-[600px] space-y-4 overflow-y-auto pr-2">
                     {newsItems.map((item, index) => (
-                      <Card key={`${item.url}-${index}`} className="border-white/10 bg-slate-950/70" size="sm">
-                        <CardContent className="p-4">
-                          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <Badge variant="outline">{item.symbol}</Badge>
-                            <span>{item.source}</span>
-                            <span>{new Date(item.publishedAt).toLocaleDateString("vi-VN")}</span>
-                            <Badge className="bg-emerald-500/15 text-emerald-300">Bullish</Badge>
-                            <Badge className="bg-orange-500/15 text-orange-300">High Impact</Badge>
-                          </div>
-                          <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-cyan-300">{item.title}</a>
-                          {item.summary && <p className="mt-2 text-sm text-slate-400">{item.summary}</p>}
-                        </CardContent>
-                      </Card>
+                      <div key={`${item.url}-${index}`} className="antigravity-panel p-5 hover:bg-white/[0.01] transition-all bg-transparent">
+                        <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] uppercase font-bold tracking-wider">
+                          <Badge variant="outline" className="border-white/10 text-white/70">{item.symbol}</Badge>
+                          <span className="text-slate-500">{item.source}</span>
+                          <span className="text-slate-500">{new Date(item.publishedAt).toLocaleDateString("vi-VN")}</span>
+                          <Badge className="bg-emerald-500/10 text-emerald-400 border-none font-bold">Bullish</Badge>
+                          <Badge className="bg-white/5 text-slate-300 border-none font-bold">High Impact</Badge>
+                        </div>
+                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-white hover:text-slate-300 transition-colors block text-base mt-2 leading-relaxed">{item.title}</a>
+                        {item.summary && <p className="mt-2 text-sm text-slate-400 leading-relaxed line-clamp-2">{item.summary}</p>}
+                      </div>
                     ))}
-                  </CardContent>
-                </Card>
-              </TabsContent>
+                  </div>
+                  )}
+                </div>
+              )}
             </div>
-          </main>
+          </div>
+
         </div>
-      </Tabs>
+      </main>
+      <div className="flex-1 h-full overflow-y-auto p-6 bg-transparent" />
+    </div>
 
       <Dialog open={modal !== null} onOpenChange={open => !open && setModal(null)}>
         <DialogContent className="border-white/10 bg-[#0b1020] text-white">
@@ -892,23 +794,25 @@ export default function Page() {
           {modal === "portfolio" && (
             <div className="space-y-3">
               <Input value={portfolioForm.name} onChange={event => setPortfolioForm(prev => ({ ...prev, name: event.target.value }))} placeholder="Portfolio name" />
-              <Select value={portfolioForm.currency} onValueChange={value => setPortfolioForm(prev => ({ ...prev, currency: value }))}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Currency" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="VND">VND</SelectItem>
-                  <SelectItem value="USDT">USDT</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={portfolioForm.type} onValueChange={value => setPortfolioForm(prev => ({ ...prev, type: value }))}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Type" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="STOCKS">Stocks</SelectItem>
-                  <SelectItem value="CRYPTO">Crypto</SelectItem>
-                  <SelectItem value="COMMODITIES">Commodities</SelectItem>
-                  <SelectItem value="FUNDS">Funds</SelectItem>
-                </SelectContent>
-              </Select>
+              <select
+                value={portfolioForm.currency}
+                onChange={e => setPortfolioForm(prev => ({ ...prev, currency: e.target.value }))}
+                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+              >
+                <option value="USD">USD</option>
+                <option value="VND">VND</option>
+                <option value="USDT">USDT</option>
+              </select>
+              <select
+                value={portfolioForm.type}
+                onChange={e => setPortfolioForm(prev => ({ ...prev, type: e.target.value }))}
+                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+              >
+                <option value="STOCKS">Stocks</option>
+                <option value="CRYPTO">Crypto</option>
+                <option value="COMMODITIES">Commodities</option>
+                <option value="FUNDS">Funds</option>
+              </select>
               <Button className="w-full" onClick={submitCreatePortfolio}>Create</Button>
             </div>
           )}
@@ -934,4 +838,3 @@ export default function Page() {
     </div>
   );
 }
-

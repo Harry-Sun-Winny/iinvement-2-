@@ -1,30 +1,30 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
 };
 
-const SYSTEM_PROMPT = `Bạn là trợ lý phân tích đầu tư tài chính chuyên nghiệp.
-Yêu cầu:
-- Trả lời bằng tiếng Việt, rõ ràng và súc tích.
-- Có thể giải thích chỉ số, tóm tắt báo cáo và phân tích tác động của tin tức.
-- Phân biệt dữ kiện, giả định và nhận định.
-- Không đưa ra chỉ dẫn mua hoặc bán tuyệt đối.
-- Không bảo đảm lợi nhuận hoặc dự đoán chắc chắn.`;
+const SYSTEM_PROMPT = `Báº¡n lÃ  trá»£ lÃ½ phÃ¢n tÃ­ch Ä‘áº§u tÆ° tÃ i chÃ­nh chuyÃªn nghiá»‡p.
+YÃªu cáº§u:
+- Tráº£ lá»i báº±ng tiáº¿ng Viá»‡t, rÃµ rÃ ng vÃ  sÃºc tÃ­ch.
+- CÃ³ thá»ƒ giáº£i thÃ­ch chá»‰ sá»‘, tÃ³m táº¯t bÃ¡o cÃ¡o vÃ  phÃ¢n tÃ­ch tÃ¡c Ä‘á»™ng cá»§a tin tá»©c.
+- PhÃ¢n biá»‡t dá»¯ kiá»‡n, giáº£ Ä‘á»‹nh vÃ  nháº­n Ä‘á»‹nh.
+- KhÃ´ng Ä‘Æ°a ra chá»‰ dáº«n mua hoáº·c bÃ¡n tuyá»‡t Ä‘á»‘i.
+- KhÃ´ng báº£o Ä‘áº£m lá»£i nhuáº­n hoáº·c dá»± Ä‘oÃ¡n cháº¯c cháº¯n.`;
 
-const DISCLAIMER = "\n\nLưu ý: Thông tin chỉ mang tính tham khảo, không phải lời khuyên đầu tư và không khuyến nghị mua/bán tuyệt đối.";
+const DISCLAIMER = "\n\nLÆ°u Ã½: ThÃ´ng tin chá»‰ mang tÃ­nh tham kháº£o, khÃ´ng pháº£i lá»i khuyÃªn Ä‘áº§u tÆ° vÃ  khÃ´ng khuyáº¿n nghá»‹ mua/bÃ¡n tuyá»‡t Ä‘á»‘i.";
 
 export async function POST(request: NextRequest) {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "OPENAI_API_KEY chưa được cấu hình trên máy chủ." }, { status: 503 });
+      return NextResponse.json({ error: "OPENAI_API_KEY chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh trÃªn mÃ¡y chá»§." }, { status: 503 });
     }
 
     const body = await request.json();
     if (!Array.isArray(body.messages)) {
-      return NextResponse.json({ error: "Danh sách tin nhắn không hợp lệ." }, { status: 400 });
+      return NextResponse.json({ error: "Danh sÃ¡ch tin nháº¯n khÃ´ng há»£p lá»‡." }, { status: 400 });
     }
 
     const rawMessages: unknown[] = body.messages;
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       .map(message => ({ role: message.role, content: message.content.trim().slice(0, 12_000) }));
 
     if (!messages.length) {
-      return NextResponse.json({ error: "Tin nhắn không được để trống." }, { status: 400 });
+      return NextResponse.json({ error: "Tin nháº¯n khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng." }, { status: 400 });
     }
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -60,20 +60,20 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const quotaExceeded = response.status === 429 && data?.error?.code === "insufficient_quota";
       const providerMessage = quotaExceeded
-        ? "OpenAI API key đã hết quota hoặc chưa kích hoạt thanh toán. Hãy kiểm tra OpenAI Platform > Billing."
-        : data?.error?.message || "OpenAI API không thể xử lý yêu cầu.";
+        ? "OpenAI API key Ä‘Ã£ háº¿t quota hoáº·c chÆ°a kÃ­ch hoáº¡t thanh toÃ¡n. HÃ£y kiá»ƒm tra OpenAI Platform > Billing."
+        : data?.error?.message || "OpenAI API khÃ´ng thá»ƒ xá»­ lÃ½ yÃªu cáº§u.";
       const status = response.status === 429 ? 429 : 502;
       return NextResponse.json({ error: providerMessage }, { status });
     }
 
     const content = data?.choices?.[0]?.message?.content?.trim();
-    if (!content) return NextResponse.json({ error: "OpenAI không trả về nội dung." }, { status: 502 });
+    if (!content) return NextResponse.json({ error: "OpenAI khÃ´ng tráº£ vá» ná»™i dung." }, { status: 502 });
 
     return NextResponse.json({ content: `${content}${DISCLAIMER}` });
   } catch (error: unknown) {
     const message = error instanceof Error && error.name === "TimeoutError"
-      ? "OpenAI phản hồi quá thời gian cho phép."
-      : "Không thể kết nối OpenAI API.";
+      ? "OpenAI pháº£n há»“i quÃ¡ thá»i gian cho phÃ©p."
+      : "KhÃ´ng thá»ƒ káº¿t ná»‘i OpenAI API.";
     console.error("OpenAI Chat Error:", error);
     return NextResponse.json({ error: message }, { status: 500 });
   }

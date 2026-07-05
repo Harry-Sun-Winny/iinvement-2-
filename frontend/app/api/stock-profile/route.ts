@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
   const symbol = req.nextUrl.searchParams.get("symbol");
@@ -16,6 +16,8 @@ export async function GET(req: NextRequest) {
       marketCap: data.marketCapitalization || 0,
       name: data.name || symbol,
       currency: data.currency || "USD",
+      sector: data.finnhubIndustry || "Unknown",
+      country: data.country || "Unknown",
     });
   } catch {
     return NextResponse.json({ logo: "", marketCap: 0 });

@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-
+﻿import { NextRequest, NextResponse } from "next/server";
+import YahooFinanceClass from "yahoo-finance2";
+const yahooFinance = new YahooFinanceClass();
 type NewsItem = {
   title: string;
   summary: string;
@@ -18,7 +19,7 @@ type SymbolProfile = {
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY?.trim() ?? "";
 
-// RSS feeds cho từng nguồn
+// RSS feeds cho tá»«ng nguá»“n
 const RSS_SOURCES = [
   { name: "Reuters", url: (_q: string) => `https://feeds.reuters.com/reuters/businessNews` },
   { name: "CNBC", url: (_q: string) => `https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114` },
@@ -116,20 +117,16 @@ export async function GET(req: NextRequest) {
 
   if (!symbol) return NextResponse.json({ error: "No symbol" }, { status: 400 });
 
-  // Nếu crawl=1 → trả về profile data (tên, logo, marketCap)
+  // Náº¿u crawl=1 â†’ tráº£ vá» profile data (tÃªn, logo, marketCap)
   if (withCrawl) {
     try {
-      const res = await fetch(
-        `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryProfile,price`,
-        { headers: { "User-Agent": "Mozilla/5.0" } }
-      );
-      const data = await res.json();
-        const price = data.quoteSummary?.result?.[0]?.price;
-      const profile = data.quoteSummary?.result?.[0]?.summaryProfile;
+      const data = await yahooFinance.quoteSummary(symbol, { modules: ['summaryProfile', 'price'] });
+      const price = data.price;
+      const profile = data.summaryProfile;
       return NextResponse.json({
         name: price?.longName ?? price?.shortName ?? symbol,
         logo: getLogoUrl(profile?.website),
-        marketCap: price?.marketCap?.raw ? Math.round(price.marketCap.raw / 1_000_000) : 0,
+        marketCap: price?.marketCap ? Math.round(price.marketCap / 1_000_000) : 0,
         currency: price?.currency ?? "USD",
       } as SymbolProfile);
     } catch {
@@ -137,7 +134,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Mặc định → trả về tin tức
+  // Máº·c Ä‘á»‹nh â†’ tráº£ vá» tin tá»©c
   let news: any[] = [];
 
   try {
@@ -151,7 +148,7 @@ export async function GET(req: NextRequest) {
     } catch {}
   }
 
-  // Crawl thêm nội dung chi tiết nếu cần
+  // Crawl thÃªm ná»™i dung chi tiáº¿t náº¿u cáº§n
   if (news.length > 0 && !compact) {
     const enriched = await Promise.all(news.slice(0, 5).map(async (n) => {
       if (n.summary && n.summary.length > 100) return n;

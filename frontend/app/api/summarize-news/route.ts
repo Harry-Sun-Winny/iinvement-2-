@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
   const { title, summary } = await req.json();
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
         max_tokens: 200,
         messages: [{
           role: "user",
-          content: `Tóm tắt tin tức sau thành 2 dòng: 1 dòng tiếng Anh, 1 dòng tiếng Việt. Chỉ trả về đúng 2 dòng, không thêm gì khác.\n\n${content}`
+          content: `TÃ³m táº¯t tin tá»©c sau thÃ nh 2 dÃ²ng: 1 dÃ²ng tiáº¿ng Anh, 1 dÃ²ng tiáº¿ng Viá»‡t. Chá»‰ tráº£ vá» Ä‘Ãºng 2 dÃ²ng, khÃ´ng thÃªm gÃ¬ khÃ¡c.\n\n${content}`
         }]
       })
     });

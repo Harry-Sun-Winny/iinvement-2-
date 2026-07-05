@@ -19,6 +19,7 @@ export interface AnalysisState {
   stockQuestion: string;
   analysisStatus: string;
   localError: string;
+  aiAnalysis: string; // Add this
 }
 
 export type AnalysisAction =
@@ -28,7 +29,8 @@ export type AnalysisAction =
   | { type: "SET_SYMBOL"; payload: string }
   | { type: "SET_QUESTION"; payload: string }
   | { type: "SET_STATUS"; payload: string }
-  | { type: "SET_ERROR"; payload: string };
+  | { type: "SET_ERROR"; payload: string }
+  | { type: "SET_AI_ANALYSIS"; payload: string }; // Add this
 
 const initialState: AnalysisState = {
   selectedId: "",
@@ -39,6 +41,7 @@ const initialState: AnalysisState = {
   stockQuestion: "Đánh giá xu hướng, catalyst và rủi ro quan trọng nhất của cổ phiếu này trong danh mục của tôi.",
   analysisStatus: "",
   localError: "",
+  aiAnalysis: "", // Initialize
 };
 
 function reducer(state: AnalysisState, action: AnalysisAction): AnalysisState {
@@ -50,6 +53,7 @@ function reducer(state: AnalysisState, action: AnalysisAction): AnalysisState {
     case "SET_QUESTION": return { ...state, stockQuestion: action.payload };
     case "SET_STATUS": return { ...state, analysisStatus: action.payload };
     case "SET_ERROR": return { ...state, localError: action.payload };
+    case "SET_AI_ANALYSIS": return { ...state, aiAnalysis: action.payload };
     default: return state;
   }
 }
@@ -143,30 +147,50 @@ export function usePortfolioAnalysis() {
   ), [queryClient]);
 
   const runAnalysis = useCallback(async () => {
+    if (!portfolioMetrics.positions.length) return;
+
+    dispatch({ type: "SET_AI_ANALYSIS", payload: '' });
+    dispatch({ type: "SET_STATUS", payload: 'Đang phân tích...' });
     dispatch({ type: "SET_ERROR", payload: "" });
-    resetAnalysis();
+
     try {
-      const portfolio = (portfoliosQuery.data ?? []).find(item => item.id === ui.selectedId);
-      if (ui.analysisMode === "stock") {
-        dispatch({ type: "SET_STATUS", payload: "Đang lấy dữ liệu cổ phiếu từ cache..." });
-        const intelligence = await getCachedIntelligence([ui.selectedSymbol]);
-        const context = createStockContext(portfolio, portfolioMetrics.positions, ui.selectedSymbol, intelligence);
-        dispatch({ type: "SET_STATUS", payload: `AI Analyst đang phân tích ${ui.selectedSymbol}...` });
-        await analyze({ context, request: ui.stockQuestion.trim() || "Phân tích xu hướng và rủi ro của cổ phiếu này." });
-      } else {
-        const topSymbols = [...portfolioMetrics.pricedPositions].sort((a, b) => b.value - a.value).slice(0, 3).map(position => position.symbol);
-        dispatch({ type: "SET_STATUS", payload: "Đang lấy market intelligence từ cache..." });
-        const intelligence = await getCachedIntelligence(topSymbols);
-        const context = createPortfolioContext(portfolio, portfolioMetrics.positions, intelligence);
-        dispatch({ type: "SET_STATUS", payload: "AI Analyst đang phân tích rủi ro và catalyst..." });
-        await analyze({ context, request: "Phân tích rủi ro danh mục, catalyst và các hành động có điều kiện." });
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode:     ui.analysisMode,
+          symbol:   ui.selectedSymbol,
+          question: ui.stockQuestion,
+          positions: portfolioMetrics.positions,
+          prices:    pricesQuery.data,
+        })
+      })
+
+      if (!res.ok) throw new Error(await res.text())
+
+      // ⚡ Đọc stream → cập nhật UI realtime từng chunk
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let fullText = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        fullText += decoder.decode(value, { stream: true })
+
+        // Cập nhật state mỗi chunk → user thấy AI đang "gõ"
+        dispatch({ type: "SET_AI_ANALYSIS", payload: fullText });
+        dispatch({ type: "SET_STATUS", payload: 'Đang phân tích...' });
       }
-    } catch (error) {
-      dispatch({ type: "SET_ERROR", payload: `Lỗi AI: ${errorMessage(error)}` });
-    } finally {
-      dispatch({ type: "SET_STATUS", payload: "" });
+
+      dispatch({ type: "SET_STATUS", payload: 'Hoàn tất' });
+
+    } catch (err: any) {
+      dispatch({ type: "SET_ERROR", payload: `Lỗi phân tích: ${err.message}` });
+      dispatch({ type: "SET_STATUS", payload: '' });
     }
-  }, [analyze, getCachedIntelligence, portfolioMetrics.positions, portfolioMetrics.pricedPositions, portfoliosQuery.data, resetAnalysis, ui.analysisMode, ui.selectedId, ui.selectedSymbol, ui.stockQuestion]);
+  }, [ui.analysisMode, ui.selectedSymbol, ui.stockQuestion, portfolioMetrics.positions, pricesQuery.data]);
 
   const queryError = portfoliosQuery.error ?? transactionsQuery.error ?? pricesQuery.error;
   const state: AnalysisViewModel = {
@@ -174,7 +198,7 @@ export function usePortfolioAnalysis() {
     selectedId: ui.selectedId,
     positions: portfolioMetrics.positions,
     prices: pricesQuery.data ?? {},
-    aiAnalysis: analysisMutation.data ?? "",
+    aiAnalysis: ui.aiAnalysis,
     analysisLoading: analysisMutation.isPending || Boolean(ui.analysisStatus),
     analysisStatus: ui.analysisStatus,
     priceLoading: transactionsQuery.isLoading || pricesQuery.isLoading || pricesQuery.isFetching,

@@ -10,5 +10,6 @@ public record Transaction(
     String assetSymbol, String assetName,
     String type, BigDecimal quantity, BigDecimal price,
     String currency, LocalDate transactionDate,
-    String notes, OffsetDateTime createdAt
+    String notes, OffsetDateTime createdAt,
+    BigDecimal fee, BigDecimal realizedPnl, String taxLotMethod
 ) {}

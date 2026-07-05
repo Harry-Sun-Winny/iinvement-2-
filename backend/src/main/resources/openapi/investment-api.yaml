@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: REST API for portfolio, watchlist, goal, news, and AI analysis workflows.
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:8081
 security:
   - bearerAuth: []
 paths:
@@ -72,6 +72,104 @@ paths:
       responses:
         '200':
           description: Analysis with citations
+  /api/v1/portfolios/{portfolioId}/deep-analysis:
+    get:
+      summary: Fetch deep portfolio analytics summary for the main advanced analysis page
+      parameters:
+        - in: path
+          name: portfolioId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Snapshot-driven deep analytics bundle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioDeepAnalysisResponse'
+  /api/v1/portfolios/{portfolioId}/journal:
+    get:
+      summary: List journal entries for a portfolio
+      parameters:
+        - in: path
+          name: portfolioId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: symbol
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Journal entries ordered by pinned flag and creation time
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JournalEntryResponse'
+    post:
+      summary: Create a journal entry for a portfolio
+      parameters:
+        - in: path
+          name: portfolioId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JournalEntryRequest'
+      responses:
+        '200':
+          description: Journal entry created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntryResponse'
+  /api/v1/journal/attachments/upload:
+    post:
+      summary: Upload a journal attachment file before creating a journal entry
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, attachmentType]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                attachmentType:
+                  type: string
+      responses:
+        '200':
+          description: Uploaded attachment metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalAttachmentUploadResponse'
+  /api/v1/journal/attachments/content:
+    get:
+      summary: Download or preview a previously uploaded journal attachment
+      parameters:
+        - in: query
+          name: storageKey
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Attachment binary content
 components:
   securitySchemes:
     bearerAuth:
@@ -110,4 +208,219 @@ components:
         tokenType:
           type: string
           example: Bearer
-
+    JournalAttachmentRequest:
+      type: object
+      required: [file_name, attachment_type]
+      properties:
+        storage_key:
+          type: string
+          nullable: true
+        public_url:
+          type: string
+          nullable: true
+        file_name:
+          type: string
+        attachment_type:
+          type: string
+        mime_type:
+          type: string
+          nullable: true
+        size_bytes:
+          type: integer
+          format: int64
+          nullable: true
+    JournalEntryRequest:
+      type: object
+      required: [title, content]
+      properties:
+        symbol:
+          type: string
+          nullable: true
+        entry_type:
+          type: string
+          enum: [ai_analysis, manual_note, ai_chart, external_image]
+        title:
+          type: string
+        content:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        is_pinned:
+          type: boolean
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/JournalAttachmentRequest'
+    JournalAttachmentResponse:
+      type: object
+      required: [id, file_name, attachment_type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        storage_key:
+          type: string
+          nullable: true
+        public_url:
+          type: string
+          nullable: true
+        file_name:
+          type: string
+        attachment_type:
+          type: string
+        mime_type:
+          type: string
+          nullable: true
+        size_bytes:
+          type: integer
+          format: int64
+          nullable: true
+    JournalAttachmentUploadResponse:
+      type: object
+      required: [storage_key, public_url, file_name, attachment_type, mime_type, size_bytes]
+      properties:
+        storage_key:
+          type: string
+        public_url:
+          type: string
+        file_name:
+          type: string
+        attachment_type:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+    JournalEntryResponse:
+      type: object
+      required: [id, entry_type, title, content, tags, is_pinned, attachment_count, created_at, attachments]
+      properties:
+        id:
+          type: string
+          format: uuid
+        symbol:
+          type: string
+          nullable: true
+        entry_type:
+          type: string
+          enum: [ai_analysis, manual_note, ai_chart, external_image]
+        title:
+          type: string
+        content:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        is_pinned:
+          type: boolean
+        attachment_count:
+          type: integer
+        created_at:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/JournalAttachmentResponse'
+    PortfolioRiskMetrics:
+      type: object
+      properties:
+        totalReturn:
+          type: number
+        annualizedReturn:
+          type: number
+        volatility:
+          type: number
+        sharpeRatio:
+          type: number
+        sortinoRatio:
+          type: number
+        maxDrawdown:
+          type: number
+        valueAtRisk:
+          type: number
+    PortfolioDeepAnalysisOverview:
+      type: object
+      properties:
+        snapshotCount:
+          type: integer
+        firstSnapshotDate:
+          type: string
+          format: date
+          nullable: true
+        latestSnapshotDate:
+          type: string
+          format: date
+          nullable: true
+        latestValue:
+          type: number
+        netGain:
+          type: number
+        totalReturnPct:
+          type: number
+        cashBalance:
+          type: number
+    PortfolioEquityCurvePoint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        portfolioValue:
+          type: number
+        investedAmount:
+          type: number
+        cashBalance:
+          type: number
+    PortfolioRollingMetricPoint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        sharpeRatio:
+          type: number
+        sortinoRatio:
+          type: number
+        valueAtRisk95:
+          type: number
+        conditionalValueAtRisk95:
+          type: number
+    PortfolioDrawdownPoint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        portfolioValue:
+          type: number
+        runningPeak:
+          type: number
+        drawdown:
+          type: number
+    PortfolioDeepAnalysisResponse:
+      type: object
+      properties:
+        overview:
+          $ref: '#/components/schemas/PortfolioDeepAnalysisOverview'
+        riskMetrics:
+          $ref: '#/components/schemas/PortfolioRiskMetrics'
+        equityCurve:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortfolioEquityCurvePoint'
+        rollingMetrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortfolioRollingMetricPoint'
+        drawdownSeries:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortfolioDrawdownPoint'
+        methodologyNotes:
+          type: array
+          items:
+            type: string

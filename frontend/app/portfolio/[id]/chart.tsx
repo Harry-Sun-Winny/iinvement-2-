@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useTableTheme } from "../../lib/table-theme";
 import { motion } from "framer-motion";
 import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Activity, Banknote, BriefcaseBusiness, DollarSign, LineChart, Percent, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import ChartTooltip from "@/components/charts/ChartTooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Transaction } from "../../lib/api";
@@ -13,6 +15,8 @@ import { Transaction } from "../../lib/api";
 interface Props {
   transactions: Transaction[];
   currentPrices: Record<string, number>;
+  currencyRates: Record<string, number>;
+  dataReady: boolean;
 }
 
 type RangeKey = "1D" | "7D" | "30D" | "3M" | "1Y" | "ALL";
@@ -42,6 +46,18 @@ interface ChartPoint {
   pnl: number;
 }
 
+function summarizeState(state: Record<string, { quantity: number; cost: number; lastPrice: number }>) {
+  return Object.values(state).reduce(
+    (totals, item) => {
+      const quantity = Math.max(0, item.quantity);
+      totals.value += quantity * item.lastPrice;
+      totals.invested += item.cost;
+      return totals;
+    },
+    { value: 0, invested: 0 },
+  );
+}
+
 const RANGES: { key: RangeKey; label: string; days?: number }[] = [
   { key: "1D", label: "1D", days: 1 },
   { key: "7D", label: "7D", days: 7 },
@@ -66,12 +82,13 @@ function normalizeType(value: string) {
   return value?.toUpperCase().trim();
 }
 
+function formatNumber(num: number) {
+  return Number(num.toFixed(2)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 function formatQuantity(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return "N/A";
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-    maximumFractionDigits: 20,
-  });
+  return value.toFixed(2).replace(/\.?0+$/, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 // Heuristic guess - không chính xác 100%, nên thay bằng field category từ backend.
@@ -99,13 +116,19 @@ function formatCompact(value: number) {
   if (abs >= 1_000_000_000_000) return `${sign}$${(abs / 1_000_000_000_000).toFixed(2)}T`;
   if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(2)}B`;
   if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}$${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  return `${sign}$${abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (abs >= 1_000) return `${sign}$${formatNumber(abs)}`;
+  return `${sign}$${abs.toFixed(2)}`;
 }
 
 function formatPct(value: number) {
   if (!Number.isFinite(value)) return "0.0%";
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function getCurrencyRate(currency: string | null | undefined, currencyRates: Record<string, number>) {
+  const normalized = currency?.trim().toUpperCase() || "USD";
+  if (normalized === "USD" || normalized === "USDT" || normalized === "USDC") return 1;
+  return currencyRates[normalized] ?? 1;
 }
 
 function filterByRange(points: ChartPoint[], range: RangeKey) {
@@ -117,7 +140,14 @@ function filterByRange(points: ChartPoint[], range: RangeKey) {
   return filtered.length ? filtered : points.slice(-1);
 }
 
-function buildAnalytics(transactions: Transaction[], currentPrices: Record<string, number>, range: RangeKey, filter: AssetFilter) {
+function buildAnalytics(
+  transactions: Transaction[],
+  currentPrices: Record<string, number>,
+  currencyRates: Record<string, number>,
+  dataReady: boolean,
+  range: RangeKey,
+  filter: AssetFilter,
+) {
   const sorted = [...transactions].sort((a, b) =>
     new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime()
   );
@@ -128,11 +158,11 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
   let totalBuy = 0;
   let totalSell = 0;
   let realizedPnl = 0;
-  let runningMarketValueAtLastPrice = 0;
-  let runningCostBasis = 0;
 
   for (const t of visible) {
     const symbol = t.assetSymbol.toUpperCase();
+    const fxRate = getCurrencyRate(t.currency, currencyRates);
+    const normalizedTradePrice = t.price * fxRate;
     const entry = state[symbol] ?? {
       quantity: 0,
       cost: 0,
@@ -140,28 +170,26 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
       realizedPnl: 0,
       name: t.assetName || symbol,
       type: assetType(symbol, t.assetName, (t as any).category ?? (t as any).assetCategory),
-      lastPrice: t.price,
+      lastPrice: normalizedTradePrice,
     };
     const side = normalizeType(t.type);
-    const previousMarketValue = Math.max(0, entry.quantity) * entry.lastPrice;
-    const previousCostBasis = entry.cost;
     entry.name = t.assetName || entry.name;
-    entry.lastPrice = t.price;
+    entry.lastPrice = normalizedTradePrice;
 
     if (side === "BUY") {
       entry.quantity += t.quantity;
-      entry.cost += t.quantity * t.price;
-      entry.lifetimeCost += t.quantity * t.price;
-      totalBuy += t.quantity * t.price;
+      entry.cost += t.quantity * normalizedTradePrice;
+      entry.lifetimeCost += t.quantity * normalizedTradePrice;
+      totalBuy += t.quantity * normalizedTradePrice;
     }
     if (side === "SELL") {
-      const avgCost = entry.quantity > 0 ? entry.cost / entry.quantity : t.price;
+      const avgCost = entry.quantity > 0 ? entry.cost / entry.quantity : normalizedTradePrice;
       const soldCost = Math.min(t.quantity, entry.quantity) * avgCost;
-      const sellPnl = t.quantity * t.price - soldCost;
+      const sellPnl = t.quantity * normalizedTradePrice - soldCost;
       entry.quantity -= t.quantity;
       entry.cost = Math.max(0, entry.cost - soldCost);
       entry.realizedPnl += sellPnl;
-      totalSell += t.quantity * t.price;
+      totalSell += t.quantity * normalizedTradePrice;
       realizedPnl += sellPnl;
     }
 
@@ -173,10 +201,7 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
 
     state[symbol] = entry;
 
-    runningMarketValueAtLastPrice += Math.max(0, entry.quantity) * entry.lastPrice - previousMarketValue;
-    runningCostBasis += entry.cost - previousCostBasis;
-    const value = runningMarketValueAtLastPrice;
-    const invested = runningCostBasis;
+    const { value, invested } = summarizeState(state);
     const date = t.transactionDate.slice(0, 10);
     const point = { date, value, invested, pnl: value - invested + realizedPnl };
     const last = points[points.length - 1];
@@ -221,9 +246,16 @@ function buildAnalytics(transactions: Transaction[], currentPrices: Record<strin
   // NOTE: This is NOT the actual cash balance — integrate backend cash balance when available.
   const netTradingCashFlow = totalSell - totalBuy;
 
-  const today = new Date().toISOString().slice(0, 10);
-  if (points.length && points[points.length - 1].date !== today) {
-    points.push({ date: today, value: marketValue, invested: costBasis, pnl: totalPnl });
+  if (dataReady && points.length > 0) {
+    const today = new Date().toISOString().slice(0, 10);
+    const currentPoint = { date: today, value: marketValue, invested: costBasis, pnl: totalPnl };
+    const lastPoint = points[points.length - 1];
+
+    if (lastPoint.date === today) {
+      points[points.length - 1] = currentPoint;
+    } else if (lastPoint.value !== currentPoint.value || lastPoint.invested !== currentPoint.invested) {
+      points.push(currentPoint);
+    }
   }
 
   const rangedPoints = filterByRange(points, range);
@@ -289,11 +321,11 @@ function KpiCard({ label, value, badge, icon: Icon, hero = false, positive = tru
 }) {
   return (
     <motion.div whileHover={{ y: -3 }} transition={{ duration: 0.18 }}>
-      <Card className={`border-white/10 bg-white/[0.035] shadow-xl shadow-black/10 ${hero ? "min-h-[164px]" : "min-h-[132px]"}`}>
+      <Card className={`antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all shadow-xl ${hero ? "min-h-[164px]" : "min-h-[132px]"}`}>
         <CardHeader className="flex-row items-start justify-between pb-2">
           <div>
             <CardDescription className="text-xs uppercase tracking-wide text-slate-500">{label}</CardDescription>
-            <CardTitle className={`${hero ? "mt-4 text-4xl" : "mt-3 text-2xl"} tracking-tight ${neutral ? "text-slate-400" : "text-white"}`}>{value}</CardTitle>
+            <CardTitle className={`${hero ? "mt-4 text-4xl" : "mt-3 text-2xl"} tracking-tight ${neutral ? "text-slate-400" : label === "Portfolio Value" ? "text-blue-400" : "text-white"}`}>{value}</CardTitle>
           </div>
           <div className="rounded-lg border border-white/10 bg-slate-950/80 p-2 text-cyan-300">
             <Icon className="h-4 w-4" />
@@ -314,13 +346,19 @@ function KpiCard({ label, value, badge, icon: Icon, hero = false, positive = tru
   );
 }
 
-export default function PortfolioChart({ transactions, currentPrices }: Props) {
+export default function PortfolioChart({ transactions, currentPrices, currencyRates, dataReady }: Props) {
+  const { theme, setTheme, themes, textClass } = useTableTheme();
   const [range, setRange] = useState<RangeKey>("ALL");
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("ALL");
 
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const analytics = useMemo(
-    () => buildAnalytics(transactions, currentPrices, range, assetFilter),
-    [transactions, currentPrices, range, assetFilter]
+    () => buildAnalytics(transactions, currentPrices, currencyRates, dataReady, range, assetFilter),
+    [transactions, currentPrices, currencyRates, dataReady, range, assetFilter]
   );
 
   if (transactions.length === 0) return null;
@@ -340,7 +378,7 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
         <KpiCard label="Total Transactions" value={metrics.trades.toLocaleString("en-US")} icon={Activity} description="Buy, sell, swap & stake orders" />
       </motion.div>
 
-      <Card className="border-white/10 bg-white/[0.035]">
+      <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
         <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-white">
@@ -363,27 +401,31 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
           </Tabs>
 
           <div className="h-[360px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={points} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="portfolioValueGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#1e293b" strokeDasharray="2 6" vertical={false} />
-                <XAxis dataKey="date" stroke="#64748b" tickLine={false} axisLine={false} minTickGap={28} />
-                <YAxis stroke="#64748b" tickLine={false} axisLine={false} width={72} tickFormatter={value => formatCompact(Number(value))} />
-                <Tooltip
-                  cursor={{ stroke: "#38bdf8", strokeOpacity: 0.35 }}
-                  contentStyle={{ background: "#020617", border: "1px solid rgba(148,163,184,.2)", borderRadius: 12, color: "#e2e8f0" }}
-                  formatter={(value, name) => [formatCompact(Number(value ?? 0)), name === "value" ? "Portfolio Value" : name === "invested" ? "Invested" : "P/L"]}
-                  labelStyle={{ color: "#94a3b8" }}
-                />
-                <Area type="monotone" dataKey="invested" name="Invested" stroke="#64748b" strokeWidth={1.5} fill="transparent" dot={false} isAnimationActive animationDuration={650} />
-                <Area type="monotone" dataKey="value" name="Portfolio Value" stroke="#38bdf8" strokeWidth={2.5} fill="url(#portfolioValueGradient)" dot={false} activeDot={{ r: 5 }} isAnimationActive animationDuration={750} />
-              </AreaChart>
-            </ResponsiveContainer>
+            {!dataReady ? (
+              <div className="flex h-full items-center justify-center rounded-2xl border border-white/5 bg-slate-950/40 text-sm text-slate-400">
+                Dang tai gia tri thuc cua danh muc...
+              </div>
+            ) : mounted && (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={points} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="portfolioValueGradient" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="#1e293b" strokeDasharray="2 6" vertical={false} />
+                  <XAxis dataKey="date" stroke="#64748b" tickLine={false} axisLine={false} minTickGap={28} />
+                  <YAxis stroke="#64748b" tickLine={false} axisLine={false} width={72} tickFormatter={value => formatCompact(Number(value))} />
+                  <Tooltip
+                    cursor={{ stroke: "#38bdf8", strokeOpacity: 0.35 }}
+                    content={<ChartTooltip valueFormatter={(value) => formatCompact(Number(value ?? 0))} />}
+                  />
+                  <Area type="monotone" dataKey="invested" name="Invested" stroke="#64748b" strokeWidth={1.5} fill="transparent" dot={false} isAnimationActive animationDuration={650} />
+                  <Area type="monotone" dataKey="value" name="Portfolio Value" stroke="#38bdf8" strokeWidth={2.5} fill="url(#portfolioValueGradient)" dot={false} activeDot={{ r: 5 }} isAnimationActive animationDuration={750} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-4 text-xs text-slate-400">
@@ -394,21 +436,23 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
       </Card>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
-        <Card className="border-white/10 bg-white/[0.035]">
+        <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
           <CardHeader>
             <CardTitle>Asset Allocation</CardTitle>
             <CardDescription>Current market value by asset type.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-[220px_1fr]">
             <div className="h-[220px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={allocationData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={86}>
-                    {allocationData.map((entry, index) => <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ background: "#020617", border: "1px solid rgba(148,163,184,.2)", borderRadius: 12 }} formatter={value => formatCompact(Number(value ?? 0))} />
-                </PieChart>
-              </ResponsiveContainer>
+              {mounted && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={allocationData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={86}>
+                      {allocationData.map((entry, index) => <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip valueFormatter={(value) => formatCompact(Number(value ?? 0))} />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
             <div className="space-y-3 self-center">
               {allocationData.map((item, index) => {
@@ -427,7 +471,7 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
           </CardContent>
         </Card>
 
-        <Card className="border-white/10 bg-white/[0.035]">
+        <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
           <CardHeader>
             <CardTitle>Risk & Trade Quality</CardTitle>
             <CardDescription>Concentration, drawdown and execution stats.</CardDescription>
@@ -439,7 +483,7 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
                 ["Exposure", `${metrics.exposure.toFixed(1)}%`, metrics.exposure > 85],
                 ["Largest", `${metrics.largestPosition.toFixed(1)}%`, metrics.largestPosition > 30],
               ].map(([label, value, risk]) => (
-                <Card key={label as string} className="border-white/10 bg-slate-950/70" size="sm">
+                <Card key={label as string} className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all" size="sm">
                   <CardHeader>
                     <CardDescription>{label as string}</CardDescription>
                     <CardTitle className={risk ? "text-red-300" : "text-emerald-300"}>{value as string}</CardTitle>
@@ -455,7 +499,7 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
                 ["Avg Loss", formatPct(metrics.avgLoss)],
                 ["Profit Factor", metrics.profitFactor.toFixed(2)],
               ].map(([label, value]) => (
-                <div key={label} className="flex justify-between rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2">
+                <div key={label} className="flex justify-between rounded-lg border border-white/5 bg-white/[0.015] px-3 py-2">
                   <span className="text-slate-500">{label}</span>
                   <span className="font-medium text-slate-100">{value}</span>
                 </div>
@@ -465,14 +509,14 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
         </Card>
       </div>
 
-      <Card className="border-white/10 bg-white/[0.035]">
+      <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
         <CardHeader>
           <CardTitle>Top Winners / Top Losers</CardTitle>
           <CardDescription>Best and worst current positions by return.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           {[["Top Winners", winners], ["Top Losers", losers]].map(([title, rows]) => (
-            <div key={title as string} className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+            <div key={title as string} className="antigravity-panel p-4 border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{title as string}</p>
               {(rows as Position[]).length === 0 ? (
                 <p className="text-sm text-slate-500">Not enough data.</p>
@@ -496,19 +540,40 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
         </CardContent>
       </Card>
 
-      <Card className="border-white/10 bg-white/[0.035]">
+      <Card className="border-white/10 bg-[#0B0F19]">
         <CardHeader className="flex-row items-center justify-between">
           <div>
-            <CardTitle>Current Holdings</CardTitle>
-            <CardDescription>{analytics.positions.length} active assets sorted by market value.</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-white">
+              Current Holdings
+              <Badge className="text-blue-400 bg-blue-500/10 border-blue-500/20">{analytics.positions.length}</Badge>
+            </CardTitle>
+            <CardDescription>Active assets sorted by market value.</CardDescription>
           </div>
         </CardHeader>
         <CardContent>
+          {/* Table Accent Color Picker */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between bg-slate-900/40 px-4 py-3 rounded-xl border border-white/5 gap-3 mb-4">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-normal min-w-[120px] break-words">Màu chủ đạo của bảng:</span>
+            <div className="flex flex-wrap items-center gap-1.5 justify-end">
+              {themes.map((t) => (
+                <button
+                  key={t.name}
+                  onClick={() => setTheme(t.name)}
+                  className={`w-3.5 h-3.5 rounded-full border-2 transition-all ${
+                    theme === t.name ? "scale-125 border-white ring-2 ring-white/20" : "border-transparent opacity-60 hover:opacity-100"
+                  }`}
+                  style={{ backgroundColor: t.hex }}
+                  title={t.name}
+                />
+              ))}
+            </div>
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow className="border-white/10">
                 {["Symbol", "Asset", "Qty", "Avg Cost", "Current", "Market Value", "Weight", "Unrealized", "Realized", "Total P/L", "Total Return"].map(head => (
-                  <TableHead key={head} className={head === "Symbol" || head === "Asset" ? "" : "text-right"}>{head}</TableHead>
+                  <TableHead key={head} className={`${textClass} font-bold ${head === "Symbol" || head === "Asset" ? "" : "text-right"}`}>{head}</TableHead>
                 ))}
               </TableRow>
             </TableHeader>
@@ -520,7 +585,7 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
                 const totalNegative = position.totalPnl < 0;
                 return (
                   <TableRow key={position.symbol} className="border-white/10 hover:bg-white/[0.04]">
-                    <TableCell className="font-semibold text-white">
+                    <TableCell className={`font-semibold ${textClass}`}>
                       <span className="flex items-center gap-1.5">
                         {position.symbol}
                         {position.isStalePrice && (
@@ -533,12 +598,12 @@ export default function PortfolioChart({ transactions, currentPrices }: Props) {
                         )}
                       </span>
                     </TableCell>
-                    <TableCell className="max-w-[220px] truncate text-slate-300">{position.name}</TableCell>
-                    <TableCell className="min-w-[150px] whitespace-nowrap text-right font-mono tabular-nums text-slate-300" title={String(position.quantity)}>{formatQuantity(position.quantity)}</TableCell>
-                    <TableCell className="text-right text-slate-300">{formatCompact(avgCost)}</TableCell>
-                    <TableCell className="text-right text-slate-300">{formatCompact(position.currentPrice)}</TableCell>
-                    <TableCell className="text-right font-medium text-white">{formatCompact(position.marketValue)}</TableCell>
-                    <TableCell className="text-right text-slate-300">{position.weight.toFixed(1)}%</TableCell>
+                    <TableCell className={`max-w-[220px] truncate ${textClass}`}>{position.name}</TableCell>
+                    <TableCell className={`min-w-[150px] whitespace-normal min-w-[120px] break-words text-right font-mono tabular-nums ${textClass}`} title={String(position.quantity)}>{formatQuantity(position.quantity)}</TableCell>
+                    <TableCell className={`text-right ${textClass}`}>{formatCompact(avgCost)}</TableCell>
+                    <TableCell className={`text-right ${textClass}`}>{formatCompact(position.currentPrice)}</TableCell>
+                    <TableCell className={`text-right font-medium ${textClass}`}>{formatCompact(position.marketValue)}</TableCell>
+                    <TableCell className={`text-right ${textClass}`}>{position.weight.toFixed(1)}%</TableCell>
                     <TableCell className="text-right">
                       <Badge variant={negative ? "destructive" : "default"} className={negative ? "" : "bg-emerald-500/15 text-emerald-300"}>
                         {position.pnl >= 0 ? "+" : ""}{formatCompact(position.pnl)}

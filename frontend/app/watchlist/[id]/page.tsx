@@ -23,11 +23,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getWatchlistItems, addWatchlistItem, removeWatchlistItem, getStockPrice, WatchlistItem } from "../../lib/api";
+
 import StockAnalyticsModal from "./components/StockAnalyticsModal";
-import AnalyticsErrorBoundary from "./components/AnalyticsErrorBoundary";
 
 interface SearchResult { symbol: string; name: string; type: string; }
-interface PriceData { price: number; change: number; changePercent: number; }
+interface PriceData { price: number | null; change: number | null; changePercent: number | null; }
 
 type SortKey = "changePercent" | "price" | "symbol";
 type AssetFilter = "ALL" | "STOCKS" | "ETF" | "CRYPTO";
@@ -48,12 +48,6 @@ function compactMoney(value?: number) {
   if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
   if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
   return `${sign}$${abs.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-}
-
-function formatPercent(value?: number | null) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "N/A";
-  return `${num >= 0 ? "+" : ""}${num.toFixed(2)}%`;
 }
 
 function classifyAsset(symbol: string, name = ""): AssetFilter {
@@ -122,7 +116,7 @@ export default function WatchlistPage() {
     setSearchError("");
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     if (!val.trim()) { setSuggestions([]); setSearchLoading(false); return; }
-    searchTimeout.current = setTimeout(() => void searchAssets(val), 500);
+    searchTimeout.current = setTimeout(() => void searchAssets(val), 300);
   }
 
   async function searchAssets(value = query) {
@@ -156,8 +150,8 @@ export default function WatchlistPage() {
     try {
       const item = await addWatchlistItem(id, s.symbol, s.name);
       setItems(prev => [...prev, item]);
+      await fetchPrices([s.symbol]);
       setQuery(""); setSuggestions([]); setShowSuggestions(false); setSearchError("");
-      void fetchPrices([s.symbol]);
     } catch (e: any) {
       setSearchError(e?.message || `Unable to add ${s.symbol}.`);
     } finally {
@@ -186,16 +180,13 @@ export default function WatchlistPage() {
   }, [filter, items, prices, sortDir, sortKey]);
 
   const priced = items.map(item => prices[item.assetSymbol]).filter(Boolean);
-  const gainers = priced.filter(price => price.change >= 0);
-  const losers = priced.filter(price => price.change < 0);
-  const validChanges = priced.map(price => Number(price.changePercent)).filter(Number.isFinite);
-  const averageChange = validChanges.length ? validChanges.reduce((sum, change) => sum + change, 0) / validChanges.length : 0;
+  const gainers = priced.filter(price => price.change != null && price.change >= 0);
+  const losers = priced.filter(price => price.change != null && price.change < 0);
+  const averageChange = priced.length ? priced.reduce((sum, price) => sum + (price.changePercent ?? 0), 0) / priced.length : 0;
   const best = items.reduce<{ symbol: string; change: number } | null>((acc, item) => {
     const price = prices[item.assetSymbol];
-    const raw = price?.changePercent;
-    const change = Number(raw);
-    if (!Number.isFinite(change)) return acc;
-    if (!acc || change > acc.change) return { symbol: item.assetSymbol, change };
+    if (!price || price.changePercent == null) return acc;
+    if (!acc || price.changePercent > acc.change) return { symbol: item.assetSymbol, change: price.changePercent };
     return acc;
   }, null);
 
@@ -208,233 +199,167 @@ export default function WatchlistPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050816] text-slate-100">
-      <aside className="fixed inset-y-0 left-0 hidden w-60 border-r border-white/10 bg-slate-950/95 p-5 lg:flex lg:flex-col">
-        <div className="mb-8">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-cyan-400 text-slate-950">
-              <Eye className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="font-semibold text-white">Investment</p>
-              <p className="text-xs text-slate-500">Watchlist Desk</p>
-            </div>
-          </div>
-        </div>
-        <Button variant="ghost" className="justify-start text-slate-400" onClick={() => window.location.href = "/"}>Dashboard</Button>
-        <Button variant="ghost" className="justify-start text-slate-400" onClick={() => window.location.href = "/analysis"}>AI Analysis</Button>
-        <Button variant="ghost" className="mt-auto justify-start text-red-300" onClick={() => { localStorage.removeItem("token"); window.location.href = "/login"; }}>
-          Logout
-        </Button>
-      </aside>
+    <>
 
-      <main className="px-4 py-6 lg:ml-60 lg:px-8">
-        <div className="mx-auto max-w-7xl space-y-6">
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-            <Card className="border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,.14),transparent_34%),linear-gradient(135deg,#0f172a,#050816)]">
-              <CardContent className="flex flex-col gap-4 p-6 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <Badge variant="outline" className="border-cyan-400/30 text-cyan-300">Institutional Watchlist</Badge>
-                  <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white lg:text-5xl">Market Watchlist</h1>
-                  <p className="mt-3 max-w-2xl text-sm text-slate-400">
-                    Monitor high-conviction assets, daily movers and watchlist risk in a compact trading desk view.
-                  </p>
+      <div className="flex flex-1 h-full overflow-hidden">
+      <main className="w-[800px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
+
+          {error && (
+            <div className="antigravity-panel p-4 text-sm text-red-400 border border-red-500/20 bg-red-500/5 backdrop-blur">
+              {error}
+            </div>
+          )}
+
+          <div className="antigravity-panel antigravity-float-slow overflow-hidden">
+            {/* Embedded Header Controls */}
+            <div className="flex flex-col border-b border-white/5 p-6 gap-4 bg-white/[0.01]">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-sm font-bold text-white tracking-widest uppercase">Watchlist Desk</h2>
                 </div>
-                <Button variant="outline" onClick={() => fetchPrices(items.map(i => i.assetSymbol))} disabled={items.length === 0 || priceLoading}>
-                  <RefreshCw className={`h-4 w-4 ${priceLoading ? "animate-spin" : ""}`} />
-                  Refresh
-                </Button>
-              </CardContent>
-            </Card>
-          </motion.div>
 
-          {error && <Card className="border-red-500/20 bg-red-500/10"><CardContent className="p-4 text-sm text-red-300">{error}</CardContent></Card>}
-
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {[
-              { label: "Total Assets", value: items.length.toLocaleString(), icon: Eye, tone: "text-white" },
-              { label: "Assets Up Today", value: gainers.length.toLocaleString(), icon: TrendingUp, tone: "text-emerald-400" },
-              { label: "Assets Down Today", value: losers.length.toLocaleString(), icon: TrendingDown, tone: "text-red-400" },
-              { label: "Average Daily Change", value: formatPercent(averageChange), icon: Activity, tone: averageChange >= 0 ? "text-emerald-400" : "text-red-400" },
-              { label: "Best Performer", value: best ? `${best.symbol} ${formatPercent(best.change)}` : "N/A", icon: TrendingUp, tone: "text-emerald-400" },
-            ].map((card, index) => (
-              <motion.div key={card.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.04 }} whileHover={{ y: -3 }}>
-                <Card className="h-full border-white/10 bg-white/[0.035]">
-                  <CardHeader className="flex-row items-start justify-between pb-2">
-                    <div>
-                      <CardDescription className="text-xs uppercase tracking-wide text-slate-500">{card.label}</CardDescription>
-                      <CardTitle className={`mt-3 text-2xl ${card.tone}`}>{card.value}</CardTitle>
-                    </div>
-                    <div className="rounded-lg border border-white/10 bg-slate-950/80 p-2 text-cyan-300">
-                      <card.icon className="h-4 w-4" />
-                    </div>
-                  </CardHeader>
-                </Card>
-              </motion.div>
-            ))}
-          </section>
-
-          <Card className="border-white/10 bg-white/[0.035]">
-            <CardHeader>
-              <CardTitle>Add Asset</CardTitle>
-              <CardDescription>Search by ticker or company name.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div ref={suggestRef}>
-                <form
-                  className="flex flex-col gap-3 sm:flex-row"
-                  onSubmit={event => {
-                    event.preventDefault();
-                    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-                    void searchAssets();
-                  }}
-                >
-                  <div className="relative flex-1">
-                    <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" />
-                    <Input
-                      value={query}
-                      onChange={event => handleSearchChange(event.target.value)}
-                      onFocus={() => query && setShowSuggestions(true)}
-                      placeholder="Search AAPL, Samsung, Bitcoin..."
-                      className="border-white/10 bg-slate-950/80 pl-10 text-white placeholder:text-slate-600"
-                    />
-                  </div>
-                  <Button type="submit" disabled={!query.trim() || searchLoading} className="sm:min-w-28">
-                    <Search className={`h-4 w-4 ${searchLoading ? "animate-pulse" : ""}`} />
-                    {searchLoading ? "Searching" : "Search"}
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={() => fetchPrices(items.map(i => i.assetSymbol))} disabled={items.length === 0 || priceLoading}>
+                    <RefreshCw className={`h-3 w-3 mr-1 ${priceLoading ? "animate-spin" : ""}`} /> Refresh
                   </Button>
-                </form>
-                <AnimatePresence>
+                </div>
+              </div>
+
+              {/* Add Symbol Input & Asset Class Filters */}
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mt-2 border-t border-white/5 pt-4">
+                {/* Search Asset input nested inside table header */}
+                <div ref={suggestRef} className="relative flex-grow max-w-md">
+                  <form
+                    onSubmit={event => {
+                      event.preventDefault();
+                      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+                      void searchAssets();
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 focus-within:border-white/20 transition-all"
+                  >
+                    <Search className="h-3.5 w-3.5 text-slate-400" />
+                    <input type="text" value={query} onChange={e => handleSearchChange(e.target.value)} onFocus={() => query && setShowSuggestions(true)} placeholder="Tìm kiếm cổ phiếu để thêm..." className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 outline-none" />
+                  </form>
                   {showSuggestions && (suggestions.length > 0 || searchLoading || searchError) && (
-                    <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-slate-950/80">
-                      {searchLoading && (
-                        <div className="space-y-2 p-3">
-                          <Skeleton className="h-8 bg-white/10" />
-                          <Skeleton className="h-8 bg-white/10" />
-                        </div>
-                      )}
-                      {!searchLoading && searchError && <p className="px-4 py-3 text-sm text-amber-300">{searchError}</p>}
+                    <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-white/5 bg-[#0b0c10] shadow-2xl">
+                      {searchLoading && <div className="px-4 py-2.5 text-xs text-slate-550">Đang tìm kiếm...</div>}
+                      {!searchLoading && searchError && <p className="px-4 py-3 text-xs text-amber-300">{searchError}</p>}
                       {suggestions.map(s => (
-                        <div key={s.symbol} className="flex items-center justify-between gap-4 border-t border-white/[0.06] px-4 py-3 first:border-t-0 hover:bg-white/[0.04]">
-                          <span>
-                            <span className="font-semibold text-white">{s.symbol}</span>
-                            <span className="ml-3 text-sm text-slate-400">{s.name}</span>
-                          </span>
-                          <Button type="button" size="sm" variant="outline" disabled={addingSymbol === s.symbol} onClick={() => void handleAdd(s)}>
-                            <Plus className="h-3.5 w-3.5" />
+                        <div key={s.symbol} className="flex items-center justify-between gap-4 border-t border-white/[0.05] px-4 py-2.5 first:border-t-0 hover:bg-white/[0.04]">
+                          <div>
+                            <span className="font-semibold text-white text-xs">{s.symbol}</span>
+                            <span className="ml-3 text-[10px] text-slate-400">{s.name}</span>
+                          </div>
+                          <Button type="button" size="sm" variant="ghost" className="antigravity-btn text-[10px] h-7 px-2" disabled={addingSymbol === s.symbol} onClick={() => void handleAdd(s)}>
+                            <Plus className="h-3 w-3 mr-1" />
                             {addingSymbol === s.symbol ? "Adding" : "Add"}
                           </Button>
                         </div>
                       ))}
-                    </motion.div>
+                    </div>
                   )}
-                </AnimatePresence>
-              </div>
-            </CardContent>
-          </Card>
+                </div>
 
-          <Card className="border-white/10 bg-white/[0.035]">
-            <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <CardTitle>Watchlist Overview</CardTitle>
-                <CardDescription>{rows.length} visible assets · sorted by {sortKey} {sortDir}</CardDescription>
+                {/* Asset Filters */}
+                <div className="flex bg-white/5 p-1 rounded-lg border border-white/5 shrink-0 self-end md:self-auto">
+                  {filters.map(f => (
+                    <button key={f.value} onClick={() => setFilter(f.value)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-300 ${filter === f.value ? "bg-white/10 text-white shadow-sm" : "text-slate-400 hover:text-white"}`}>
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Tabs value={filter} onValueChange={value => setFilter(value as AssetFilter)}>
-                  <TabsList className="bg-slate-950/80">
-                    {filters.map(item => <TabsTrigger key={item.value} value={item.value}>{item.label}</TabsTrigger>)}
-                  </TabsList>
-                </Tabs>
-                <Button variant="outline" onClick={() => setSort(sortKey)}>
-                  <ArrowDownUp className="h-4 w-4" />
-                  {sortDir === "desc" ? "Desc" : "Asc"}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
+            </div>
+
+            {/* Table Content */}
+            <div className="p-6">
               {items.length === 0 ? (
-                <div className="py-16 text-center text-sm text-slate-500">No assets yet. Search above to add your first symbol.</div>
+                <div className="py-12 text-center text-sm text-slate-500 font-medium">Danh sách trống. Nhập mã phía trên để thêm!</div>
               ) : (
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-slate-950">
-                    <TableRow className="border-white/10">
-                      <TableHead className="cursor-pointer" onClick={() => setSort("symbol")}>Symbol</TableHead>
-                      <TableHead>Company Name</TableHead>
-                      <TableHead className="cursor-pointer text-right" onClick={() => setSort("price")}>Price</TableHead>
-                      <TableHead className="text-right">Change</TableHead>
-                      <TableHead className="cursor-pointer text-right" onClick={() => setSort("changePercent")}>Change %</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <AnimatePresence initial={false}>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-white/5 hover:bg-transparent">
+                        <th className="text-left py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">
+                          <button onClick={() => setSort("symbol")} className="hover:text-white inline-flex items-center gap-1">MÃ <ArrowDownUp className="h-3 w-3" /></button>
+                        </th>
+                        <th className="text-left py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">Tên công ty</th>
+                        <th className="text-right py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">
+                          <button onClick={() => setSort("price")} className="hover:text-white inline-flex items-center gap-1">Giá <ArrowDownUp className="h-3 w-3" /></button>
+                        </th>
+                        <th className="text-right py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">Thay đổi</th>
+                        <th className="text-right py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">
+                          <button onClick={() => setSort("changePercent")} className="hover:text-white inline-flex items-center gap-1">% Thay đổi <ArrowDownUp className="h-3 w-3" /></button>
+                        </th>
+                        <th className="text-center py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">Xu hướng</th>
+                        <th className="text-center py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">Hành động</th>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {rows.map(item => {
-                        const data = prices[item.assetSymbol];
-                        const up = (data?.change ?? 0) >= 0;
+                        const price = prices[item.assetSymbol];
+                        const up = (price?.change ?? 0) >= 0;
+
                         return (
-                          <motion.tr
-                            key={item.id}
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -6 }}
-                            className="border-b border-white/10 transition-colors hover:bg-white/[0.04]"
-                          >
-                            <TableCell className="font-semibold text-white">
-                              <Button
-                                variant="ghost"
-                                className="h-auto px-0 py-0 font-semibold text-cyan-300 hover:bg-transparent hover:text-cyan-200"
-                                onClick={() => setSelectedAsset(item)}
-                              >
+                          <TableRow key={item.id} className="border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer" onClick={() => setSelectedAsset(item)}>
+                            <td className="py-4 px-4 font-semibold text-white">
+                              <button className="font-semibold text-white hover:text-slate-300 transition-colors bg-transparent border-none">
                                 {item.assetSymbol}
-                              </Button>
-                            </TableCell>
-                            <TableCell className="max-w-[280px] truncate text-slate-300">{item.assetName}</TableCell>
-                            <TableCell className="text-right font-medium text-white">{data ? compactMoney(data.price) : priceLoading ? <Skeleton className="ml-auto h-5 w-16 bg-white/10" /> : "N/A"}</TableCell>
-                            <TableCell className={`text-right ${up ? "text-emerald-400" : "text-red-400"}`}>{data ? `${data.change >= 0 ? "+" : ""}${compactMoney(data.change)}` : "N/A"}</TableCell>
-                            <TableCell className="text-right">
-                              {data ? (
-                                <Badge variant={up ? "default" : "destructive"} className={up ? "bg-emerald-500/15 text-emerald-300" : ""}>
-                                  {formatPercent(data.changePercent)}
-                                </Badge>
-                              ) : "N/A"}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={up ? "border-emerald-500/30 text-emerald-300" : "border-red-500/30 text-red-300"}>
-                                {up ? "Gainer" : "Loser"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
+                              </button>
+                            </td>
+                            <td className="py-4 px-4 text-slate-300 text-xs">{item.assetName}</td>
+                            <td className="py-4 px-4 text-right font-semibold text-white">
+                              {price && price.price != null ? `$${price.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                            </td>
+                            <td className={`py-4 px-4 text-right font-semibold ${price == null || price.change == null ? "text-slate-500" : price.change >= 0 ? "text-green-400" : "text-red-400"}`}>
+                              {price && price.change != null ? `${price.change >= 0 ? "+" : ""}${price.change.toFixed(2)}` : "—"}
+                            </td>
+                            <td className="py-4 px-4 text-right">
+                              {price && price.changePercent != null ? (
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${price.changePercent >= 0 ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
+                                  {price.changePercent >= 0 ? "▲" : "▼"} {Math.abs(price.changePercent).toFixed(2)}%
+                                </span>
+                              ) : "—"}
+                            </td>
+                            <td className="py-4 px-4 text-center">
+                              {price && price.price != null ? (
+                                <span className={`inline-flex items-center rounded px-2.5 py-0.5 text-xs font-bold ${up ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"}`}>
+                                  {up ? "Gainer" : "Loser"}
+                                </span>
+                              ) : "—"}
+                            </td>
+                            <td className="py-4 px-4 text-center" onClick={e => e.stopPropagation()}>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="text-red-300 hover:text-red-200" onClick={() => handleRemove(item.assetSymbol)}>
+                                  <Button variant="ghost" size="icon" className="text-slate-500 hover:text-red-400 transition-colors" onClick={() => handleRemove(item.assetSymbol)}>
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent>Remove from watchlist</TooltipContent>
                               </Tooltip>
-                            </TableCell>
-                          </motion.tr>
+                            </td>
+                          </TableRow>
                         );
                       })}
-                    </AnimatePresence>
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
+                </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-      <AnalyticsErrorBoundary>
-        <StockAnalyticsModal
-          item={selectedAsset}
-          quote={selectedAsset ? prices[selectedAsset.assetSymbol] : undefined}
-          open={Boolean(selectedAsset)}
-          onOpenChange={open => {
-            if (!open) setSelectedAsset(null);
-          }}
-        />
-      </AnalyticsErrorBoundary>
+            </div>
+          </div>
+
+        </main>
+      <div className="flex-1 h-full overflow-y-auto p-6 bg-transparent" />
     </div>
+
+      <StockAnalyticsModal
+        item={selectedAsset}
+        quote={(() => { const q = selectedAsset ? prices[selectedAsset.assetSymbol] : undefined; return q && q.price !== null && q.change !== null && q.changePercent !== null ? { price: q.price, change: q.change, changePercent: q.changePercent } : undefined; })()}
+        open={Boolean(selectedAsset)}
+        onOpenChange={open => {
+          if (!open) setSelectedAsset(null);
+        }}
+      />
+    </>
   );
 }

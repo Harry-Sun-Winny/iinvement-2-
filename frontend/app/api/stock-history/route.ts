@@ -1,4 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import YahooFinanceClass from "yahoo-finance2";
+const yahooFinance = new YahooFinanceClass();
 
 const USER_AGENT = "Mozilla/5.0 InvestmentPlatform/0.1";
 const RANGE_MAP: Record<string, string> = {
@@ -72,26 +74,33 @@ async function fetchFundamentals(symbol: string): Promise<FundamentalPoint[]> {
 }
 
 async function fetchYahooHistory(symbol: string, range: string, interval: "1d" | "1mo") {
-  const res = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&events=history`,
-    { headers: { "User-Agent": USER_AGENT, Accept: "application/json" }, next: { revalidate: 300 } },
-  );
-  if (!res.ok) throw new Error(`Yahoo history ${res.status}`);
-  const data = await res.json();
-  const result = data.chart?.result?.[0];
-  const timestamps: number[] = result?.timestamp ?? [];
-  const quote = result?.indicators?.quote?.[0] ?? {};
-  const adjClose = result?.indicators?.adjclose?.[0]?.adjclose ?? [];
-  if (!result || timestamps.length === 0) throw new Error("Yahoo history missing data");
+  let period1 = new Date();
+  if (range === "1mo") period1.setMonth(period1.getMonth() - 1);
+  if (range === "3mo") period1.setMonth(period1.getMonth() - 3);
+  if (range === "6mo") period1.setMonth(period1.getMonth() - 6);
+  if (range === "ytd") period1 = new Date(period1.getFullYear(), 0, 1);
+  if (range === "1y") period1.setFullYear(period1.getFullYear() - 1);
+  if (range === "3y") period1.setFullYear(period1.getFullYear() - 3);
+  if (range === "5y") period1.setFullYear(period1.getFullYear() - 5);
+  if (range === "max") period1 = new Date("1970-01-01");
 
-  const points = timestamps
-    .map((timestamp, index) => {
-      const close = finiteNumber(quote.close?.[index]);
-      const adjustedClose = finiteNumber(adjClose?.[index]) ?? close;
-      const volume = finiteNumber(quote.volume?.[index]);
+  const chart = await yahooFinance.chart(symbol, {
+    period1: Math.floor(period1.getTime() / 1000),
+    period2: Math.floor(Date.now() / 1000),
+    interval
+  });
+
+  const quotes = chart.quotes ?? [];
+  if (quotes.length === 0) throw new Error("Yahoo history missing data");
+
+  const points = quotes
+    .map((q) => {
+      const close = finiteNumber(q.close);
+      const adjustedClose = finiteNumber(q.adjclose) ?? close;
+      const volume = finiteNumber(q.volume);
       if (close == null && adjustedClose == null) return null;
       return {
-        date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+        date: new Date(q.date).toISOString().slice(0, 10),
         close,
         adjustedClose,
         volume,
@@ -100,8 +109,8 @@ async function fetchYahooHistory(symbol: string, range: string, interval: "1d" |
     .filter(Boolean);
 
   return {
-    currency: result.meta?.currency || "USD",
-    exchangeName: result.meta?.exchangeName,
+    currency: chart.meta.currency || "USD",
+    exchangeName: chart.meta.exchangeName,
     points,
   };
 }

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 const BASE_URL = "https://financialmodelingprep.com/stable";
 const TTL = 5 * 60 * 1000;

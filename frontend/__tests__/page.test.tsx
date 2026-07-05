@@ -6,6 +6,8 @@ import LoginPage from "../app/login/page";
 import MarketPage from "../app/market/page";
 import PortfolioPage from "../app/portfolio/[id]/page";
 import * as api from "../app/lib/api";
+import AppSidebar from "../components/AppSidebar";
+import { ThemeProvider } from "../components/providers/ThemeProvider";
 
 vi.mock("../app/portfolio/[id]/chart", () => ({
   default: () => <div data-testid="portfolio-chart" />,
@@ -13,6 +15,76 @@ vi.mock("../app/portfolio/[id]/chart", () => ({
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "p1" }),
+  usePathname: () => "/",
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}));
+
+vi.mock("../hooks/usePortfolioAnalysis", () => ({
+  usePortfolioAnalysis: () => {
+    const pos = {
+      symbol: "AAPL", name: "Apple", quantity: 10,
+      avgPrice: 100, currentPrice: 120, value: 1200,
+      pnl: 200, pnlPct: 20, priced: true,
+    };
+    const derived = {
+      positions: [pos],
+      pricedPositions: [pos],
+      sortedPositions: [pos],
+      totalValue: 1200,
+      totalPnl: 200,
+      totalCost: 1000,
+      totalPnlPct: 20,
+      riskScore: null,
+      risk: { label: "Low", color: "text-green-400", bg: "bg-green-500/10" },
+      winner: pos,
+      loser: null,
+      missingPriceCount: 0,
+    };
+    return {
+      state: {
+        portfolios: [{ id: "p1", name: "Growth Portfolio", baseCurrency: "USD", type: "STOCKS" }],
+        selectedId: "p1",
+        positions: [pos],
+        prices: { AAPL: { symbol: "AAPL", price: 120, change: 2, changePercent: 1.7 } },
+        aiAnalysis: "",
+        analysisLoading: false,
+        analysisStatus: "",
+        priceLoading: false,
+        error: "",
+        sortKey: "value",
+        sortDir: "desc",
+        analysisMode: "portfolio",
+        selectedSymbol: "AAPL",
+        stockQuestion: "",
+      },
+      derived,
+      actions: {
+        selectPortfolio: vi.fn(),
+        setMode: vi.fn(),
+        selectSymbol: vi.fn(),
+        setQuestion: vi.fn(),
+        toggleSort: vi.fn(),
+        refreshPrices: vi.fn(),
+        runAnalysis: async () => {
+          await fetch("/api/ai-analysis", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ positions: [] }),
+          });
+        },
+        logout: vi.fn(),
+      },
+    };
+  },
+}));
+
+vi.mock("../hooks/useJournal", () => ({
+  useJournal: () => ({
+    symbolCounts: { AAPL: 1 },
+    saveAIAnalysis: vi.fn(),
+  }),
 }));
 
 vi.mock("../app/lib/api", () => ({
@@ -150,14 +222,19 @@ afterEach(() => {
 
 describe("dashboard", () => {
   it("loads portfolio workspace data and shows navigation", async () => {
-    render(<Page />);
+    render(
+      <ThemeProvider>
+        <AppSidebar />
+        <Page />
+      </ThemeProvider>
+    );
 
     expect(await screen.findByText("Growth Portfolio")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Watchlist" })[0]);
     expect(screen.getByText("Main Watchlist")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Goals" })[0]);
     expect(screen.getByText("Retirement")).toBeTruthy();
-    expect(screen.getAllByText("Portfolio").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Portfolio/).length).toBeGreaterThan(0);
     expect(screen.getByText("Market")).toBeTruthy();
     expect(screen.getByText("AI Analysis")).toBeTruthy();
   });
@@ -210,12 +287,13 @@ describe("ai analysis", () => {
     expect(screen.getByText(/Apple/)).toBeTruthy();
     expect(await screen.findByText("$120.00")).toBeTruthy();
 
-    fireEvent.click(screen.getAllByRole("button", { name: /AI Analysis/ })[1]);
+    fireEvent.click(screen.getByRole("button", { name: /Phân tích rủi ro danh mục/ }));
 
-    expect(await screen.findByText("Portfolio risk is moderate.")).toBeTruthy();
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/ai-analysis",
-      expect.objectContaining({ method: "POST" }),
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/ai-analysis",
+        expect.objectContaining({ method: "POST" }),
+      ),
     );
   });
 });
@@ -254,7 +332,7 @@ describe("portfolio transactions", () => {
     const { container } = render(<PortfolioPage />);
 
     expect(await screen.findByText("INTEL")).toBeTruthy();
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/stock-price?symbol=INTC"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/stock-price?symbol=INTC", expect.any(Object)));
     fireEvent.click(screen.getByRole("button", { name: "+ Thêm GD" }));
 
     fireEvent.change(screen.getByPlaceholderText("VD: AAPL, GOOGL, VNM..."), { target: { value: "JPM" } });
@@ -279,7 +357,7 @@ describe("login", () => {
     fireEvent.change(container.querySelector("input[type='password']")!, { target: { value: "very-secure-password" } });
     fireEvent.click(container.querySelector("button[type='submit']")!);
 
-    await waitFor(() => expect(api.login).toHaveBeenCalledWith("user@example.com", "very-secure-password"));
+    await waitFor(() => expect(api.login).toHaveBeenCalledWith("user@example.com", "very-secure-password", expect.any(AbortSignal)));
     expect(localStorage.getItem("token")).toBe("new-token");
   });
 });

@@ -9,7 +9,26 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Skeleton } from "@/components/ui/skeleton";
 import FinancialSection, { FinancialMetric } from "./FinancialSection";
 import StockChart, { StockSeriesPoint } from "./StockChart";
-import { fetchIncomeStatement, fetchValuationMetrics, FmpIncomeStatement, FmpValuationMetrics } from "@/services/fmpService";
+
+import { isV2Enabled } from "../lib/feature-flag";
+import { normalizeDashboardData } from "../lib/normalizer";
+import {
+  selectTicker,
+  selectCompanyName,
+  selectLogo,
+  selectCurrency,
+  selectMarketCap,
+  selectPrice,
+  selectChangePercent,
+  selectChartPoints,
+  selectNews,
+  selectMetricValue,
+  selectFormattedMetric
+} from "../lib/selectors";
+import type { DashboardData } from "../lib/types";
+
+import { analyzeCapabilities } from "../lib/capability-analyzer";
+import { SECTION_REGISTRY } from "../lib/section-registry";
 
 interface AssetLike {
   assetSymbol: string;
@@ -125,8 +144,6 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [liveQuote, setLiveQuote] = useState<PriceData | undefined>(quote);
   const [history, setHistory] = useState<HistoryData | null>(null);
-  const [income, setIncome] = useState<FmpIncomeStatement | null>(null);
-  const [valuation, setValuation] = useState<FmpValuationMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -139,7 +156,7 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
       setLoading(true);
       setError("");
       try {
-        const [priceResult, profileResult, historyResult, incomeResult, valuationResult] = await Promise.allSettled([
+        const [priceResult, profileResult, historyResult] = await Promise.allSettled([
           fetch(`/api/stock-price?symbol=${encodeURIComponent(currentItem.assetSymbol)}`).then(res => {
             if (!res.ok) throw new Error("Price request failed");
             return res.json();
@@ -152,8 +169,6 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
             if (!res.ok) throw new Error("History request failed");
             return res.json();
           }),
-          fetchIncomeStatement(currentItem.assetSymbol),
-          fetchValuationMetrics(currentItem.assetSymbol),
         ]);
 
         if (cancelled) return;
@@ -161,12 +176,7 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
         if (profileResult.status === "fulfilled") setProfile(profileResult.value);
         if (historyResult.status === "fulfilled") setHistory(historyResult.value);
         else setHistory(null);
-        setIncome(incomeResult.status === "fulfilled" ? incomeResult.value : null);
-        setValuation(valuationResult.status === "fulfilled" ? valuationResult.value : null);
-        if (incomeResult.status === "rejected" && valuationResult.status === "rejected") {
-          const message = incomeResult.reason instanceof Error ? incomeResult.reason.message : "Unable to load FMP fundamentals.";
-          setError(message);
-        } else if (priceResult.status === "rejected" && profileResult.status === "rejected" && historyResult.status === "rejected") {
+        if (priceResult.status === "rejected" && profileResult.status === "rejected" && historyResult.status === "rejected") {
           setError("Unable to load stock analytics right now.");
         }
       } catch {
@@ -186,99 +196,148 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
     if (quote) setLiveQuote(quote);
   }, [quote]);
 
-  const currency = history?.currency || profile?.currency || "USD";
-  const price = liveQuote?.price;
-  const marketCap = profile?.marketCap ? profile.marketCap * 1_000_000 : undefined;
-  const chartData = useMemo(
-    () => buildSeries(history?.points ?? [], history?.fundamentals ?? [], marketCap),
-    [history?.fundamentals, history?.points, marketCap],
-  );
+  // Construct normalized DashboardData if Phase 1 engine is enabled
+  const v2Enabled = isV2Enabled();
+  const dashboardData = useMemo(() => {
+    if (!v2Enabled || !item) return null;
+    return normalizeDashboardData(
+      item.assetSymbol,
+      liveQuote,
+      profile,
+      history,
+      null, // FMP statements are not fetched in Phase 1 to preserve exact requests count
+      null,
+      null
+    );
+  }, [item, liveQuote, profile, history, v2Enabled]);
+
+  const currency = v2Enabled
+    ? selectCurrency(dashboardData)
+    : (history?.currency || profile?.currency || "USD");
+
+  const price = v2Enabled
+    ? selectPrice(dashboardData)
+    : liveQuote?.price;
+
+  const marketCap = v2Enabled
+    ? (selectMarketCap(dashboardData) ?? undefined)
+    : (profile?.marketCap ? profile.marketCap * 1_000_000 : undefined);
+
+  const chartData = useMemo(() => {
+    if (v2Enabled && dashboardData) {
+      return selectChartPoints(dashboardData);
+    }
+    return buildSeries(history?.points ?? [], history?.fundamentals ?? [], marketCap);
+  }, [history?.fundamentals, history?.points, marketCap, v2Enabled, dashboardData]);
+
   const latest = chartData[chartData.length - 1];
   const prior = chartData[Math.max(0, chartData.length - 22)];
   const monthlyTrend = latest?.price && prior?.price ? ((latest.price - prior.price) / prior.price) * 100 : null;
+  const trendTone = (monthlyTrend ?? liveQuote?.changePercent ?? 0) >= 0 ? "text-emerald-300" : "text-red-300";
 
   const sections = useMemo(
-    () => [
-      {
-        title: "Price Metrics",
-        description: "Live quote and technical context from existing market data.",
-        metrics: [
-          metric("Adjusted Close Price", compactMoney(price, currency), liveQuote?.changePercent ?? null, "Current quote"),
-          metric("50-Day Moving Average", compactMoney(latest?.ma50, currency), monthlyTrend, "Derived from displayed series"),
-          metric("200-Day Moving Average", compactMoney(latest?.ma200, currency), monthlyTrend, "Derived from displayed series"),
-          metric("Trading Volume", compactNumber(latest?.volume), null, "Yahoo historical volume"),
-        ],
-      },
-      {
-        title: "Dividend Metrics",
-        description: "Dividend data requires a fundamentals endpoint.",
-        metrics: [
-          metric("Dividend Per Share", "N/A", null, "No dividend API connected"),
-          metric("Dividend Yield", "N/A", null, "No dividend API connected"),
-        ],
-      },
-      {
-        title: "Valuation Metrics",
-        description: "Enterprise and multiple analysis from Financial Modeling Prep.",
-        metrics: [
-          metric("Enterprise Value (TEV)", compactMoney(valuation?.enterpriseValue, currency), null, "FMP key metrics"),
-          metric("P/E Ratio", formatRatio(valuation?.peRatio), null, "FMP key metrics"),
-          metric("Price/Sales (TTM)", formatRatio(valuation?.priceToSalesRatio), null, "FMP key metrics"),
-          metric("Price/Book", formatRatio(valuation?.pbRatio), null, "FMP key metrics"),
-          metric("PEG Ratio", formatRatio(valuation?.pegRatio), null, "FMP ratios"),
-        ],
-      },
-      {
-        title: "Income Statement",
-        description: "Latest revenue quality and profitability from Financial Modeling Prep.",
-        metrics: [
-          metric("Revenue", compactMoney(income?.revenue, currency), null, "Latest FMP income statement"),
-          metric("Gross Profit", compactMoney(income?.grossProfit, currency), null, "Latest FMP income statement"),
-          metric("Net Income Available To Common Shareholders", compactMoney(income?.netIncome, currency), null, "Latest FMP income statement"),
-          metric("EBITDA", compactMoney(income?.ebitda, currency), null, "Latest FMP income statement"),
-        ],
-      },
-      {
-        title: "Cash Flow",
-        description: "Operating cash generation and reinvestment.",
-        metrics: [
-          metric("Capital Expenditure", "N/A", null, "Requires cash-flow API"),
-          metric("Cash From Operating Activities", "N/A", null, "Requires cash-flow API"),
-        ],
-      },
-      {
-        title: "Balance Sheet",
-        description: "Liquidity and leverage checks.",
-        metrics: [
-          metric("Cash & Short-Term Investments", "N/A", null, "Requires balance-sheet API"),
-          metric("Total Debt", "N/A", null, "Requires balance-sheet API"),
-          metric("Net Debt", "N/A", null, "Requires balance-sheet API"),
-        ],
-      },
-      {
-        title: "Growth Metrics",
-        description: "Capitalization and shareholder base.",
-        metrics: [
-          metric("Net Income Growth", "N/A", null, "Requires historical statements"),
-          metric("Shares Outstanding", price && marketCap ? compactNumber(marketCap / price) : "N/A", null, "Derived from market cap / price"),
-          metric("Adjusted Market Capitalization", compactMoney(marketCap, currency), liveQuote?.changePercent ?? null, "Profile API"),
-        ],
-      },
-      {
-        title: "Market Sentiment",
-        description: "Positioning and crowding indicators.",
-        metrics: [metric("Short Interest Ratio", formatRatio(null), null, "Requires short interest feed")],
-      },
-    ],
-    [currency, income, latest, liveQuote?.changePercent, marketCap, monthlyTrend, price, valuation],
+    () => {
+      if (v2Enabled && dashboardData) {
+        const caps = analyzeCapabilities(dashboardData);
+        return SECTION_REGISTRY.filter(sec => sec.visible(caps))
+          .sort((a, b) => a.priority - b.priority)
+          .map(sec => ({
+            title: sec.title,
+            description: sec.description,
+            metrics: sec.getMetrics(dashboardData, {
+              monthlyTrend,
+              marketCap,
+              currency,
+              price,
+              compactMoney,
+              compactNumber,
+            }),
+          }));
+      }
+
+      // Legacy fallback
+      return [
+        {
+          title: "Price Metrics",
+          description: "Live quote and technical context from existing market data.",
+          metrics: [
+            metric("Adjusted Close Price", compactMoney(price, currency), liveQuote?.changePercent ?? null, "Current quote"),
+            metric("50-Day Moving Average", compactMoney(latest?.ma50, currency), monthlyTrend, "Derived from displayed series"),
+            metric("200-Day Moving Average", compactMoney(latest?.ma200, currency), monthlyTrend, "Derived from displayed series"),
+            metric("Trading Volume", compactNumber(latest?.volume), null, "Yahoo historical volume"),
+          ],
+        },
+        {
+          title: "Dividend Metrics",
+          description: "Dividend data requires a fundamentals endpoint.",
+          metrics: [
+            metric("Dividend Per Share", "N/A", null, "No dividend API connected"),
+            metric("Dividend Yield", "N/A", null, "No dividend API connected"),
+          ],
+        },
+        {
+          title: "Valuation Metrics",
+          description: "Enterprise and multiple analysis.",
+          metrics: [
+            metric("Enterprise Value (TEV)", "N/A", null, "Requires debt and cash data"),
+            metric("P/E Ratio", "N/A", null, "Requires earnings data"),
+            metric("Price/Sales (TTM)", "N/A", null, "Requires revenue data"),
+            metric("Price/Book", "N/A", null, "Requires book value data"),
+            metric("PEG Ratio", "N/A", null, "Requires growth estimates"),
+          ],
+        },
+        {
+          title: "Income Statement",
+          description: "Revenue quality and profitability.",
+          metrics: [
+            metric("Revenue", "N/A", null, "Requires financial statements API"),
+            metric("Gross Profit", "N/A", null, "Requires financial statements API"),
+            metric("Net Income Available To Common Shareholders", "N/A", null, "Requires financial statements API"),
+            metric("EBITDA", "N/A", null, "Requires financial statements API"),
+          ],
+        },
+        {
+          title: "Cash Flow",
+          description: "Operating cash generation and reinvestment.",
+          metrics: [
+            metric("Capital Expenditure", "N/A", null, "Requires cash-flow API"),
+            metric("Cash From Operating Activities", "N/A", null, "Requires cash-flow API"),
+          ],
+        },
+        {
+          title: "Balance Sheet",
+          description: "Liquidity and leverage checks.",
+          metrics: [
+            metric("Cash & Short-Term Investments", "N/A", null, "Requires balance-sheet API"),
+            metric("Total Debt", "N/A", null, "Requires balance-sheet API"),
+            metric("Net Debt", "N/A", null, "Requires balance-sheet API"),
+          ],
+        },
+        {
+          title: "Growth Metrics",
+          description: "Capitalization and shareholder base.",
+          metrics: [
+            metric("Net Income Growth", "N/A", null, "Requires historical statements"),
+            metric("Shares Outstanding", price && marketCap ? compactNumber(marketCap / price) : "N/A", null, "Derived from market cap / price"),
+            metric("Adjusted Market Capitalization", compactMoney(marketCap, currency), liveQuote?.changePercent ?? null, "Profile API"),
+          ],
+        },
+        {
+          title: "Market Sentiment",
+          description: "Positioning and crowding indicators.",
+          metrics: [metric("Short Interest Ratio", formatRatio(null), null, "Requires short interest feed")],
+        },
+      ];
+    },
+    [currency, latest, liveQuote?.changePercent, marketCap, monthlyTrend, price, v2Enabled, dashboardData]
   );
 
   if (!item) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto border-white/10 bg-[#050816] p-0 text-slate-100 sm:max-w-[min(1280px,calc(100vw-2rem))]">
-        <div className="sticky top-0 z-20 border-b border-white/10 bg-[#050816]/95 px-5 py-4 backdrop-blur">
+      <DialogContent className="max-h-[92vh] overflow-y-auto border-[var(--border)] bg-[var(--panel)] p-0 text-slate-100 sm:max-w-[min(1280px,calc(100vw-2rem))]">
+        <div className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--panel)] px-5 py-4">
           <DialogHeader>
             <div className="flex flex-col gap-3 pr-10 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -301,7 +360,7 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
 
         <div className="space-y-5 p-5">
           {error && (
-            <Card className="border-red-500/20 bg-red-500/10">
+            <Card className="antigravity-panel border-red-500/20 bg-red-500/[0.015]">
               <CardContent className="flex items-center gap-2 p-4 text-sm text-red-300">
                 <ShieldAlert className="h-4 w-4" />
                 {error}
@@ -311,18 +370,37 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
 
           <div className="grid gap-3 md:grid-cols-3">
             {[
-              { label: "Last Price", value: compactMoney(price, currency), icon: CircleDollarSign },
-              { label: "Market Cap", value: compactMoney(marketCap, currency), icon: BarChart3 },
-              { label: "Data Coverage", value: "Quote + Profile", icon: Database },
+              {
+                label: "Last Price",
+                value: compactMoney(price, currency),
+                icon: CircleDollarSign,
+                context: liveQuote?.changePercent == null ? "Đang chờ biến động phiên" : `${liveQuote.changePercent >= 0 ? "▲" : "▼"} ${liveQuote.changePercent >= 0 ? "+" : ""}${liveQuote.changePercent.toFixed(2)}% hôm nay`,
+                tone: liveQuote?.changePercent != null && liveQuote.changePercent >= 0 ? "text-emerald-300" : "text-red-300",
+              },
+              {
+                label: "Market Cap",
+                value: compactMoney(marketCap, currency),
+                icon: BarChart3,
+                context: monthlyTrend == null ? "Đang chờ chuỗi giá 30 ngày" : `${monthlyTrend >= 0 ? "▲" : "▼"} ${monthlyTrend >= 0 ? "+" : ""}${monthlyTrend.toFixed(2)}% so với 30 ngày`,
+                tone: trendTone,
+              },
+              {
+                label: "Data Coverage",
+                value: "Quote + Profile",
+                icon: Database,
+                context: "Giá, hồ sơ công ty và lịch sử giá",
+                tone: "text-cyan-300",
+              },
             ].map((card, index) => (
               <motion.div key={card.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.04 }}>
-                <Card className="border-white/10 bg-white/[0.035]">
+                <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
                   <CardContent className="flex items-center justify-between p-4">
                     <div>
                       <p className="text-xs uppercase tracking-wide text-slate-500">{card.label}</p>
                       {loading ? <Skeleton className="mt-3 h-7 w-28 bg-white/10" /> : <p className="mt-2 text-2xl font-semibold text-white">{card.value}</p>}
+                      <p className={`mt-2 text-xs font-medium ${card.tone}`}>{card.context}</p>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-slate-950/80 p-3 text-cyan-300">
+                    <div className="rounded-xl border border-white/5 bg-slate-950/80 p-3 text-cyan-300">
                       <card.icon className="h-5 w-5" />
                     </div>
                   </CardContent>
@@ -331,21 +409,21 @@ function StockAnalyticsModal({ item, quote, open, onOpenChange }: StockAnalytics
             ))}
           </div>
 
-          <StockChart data={chartData} loading={loading} error={error} />
+          <StockChart data={chartData as StockSeriesPoint[]} loading={loading} error={error} />
 
-          <div className="grid gap-5 xl:grid-cols-2">
+          <div className="grid items-stretch gap-5 xl:grid-cols-2">
             {sections.map((section, index) => (
-              <motion.div key={section.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}>
+              <motion.div key={section.title} className="h-full" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}>
                 <FinancialSection {...section} loading={loading} />
               </motion.div>
             ))}
           </div>
 
-          <Card className="border-amber-400/20 bg-amber-400/10">
+          <Card className="antigravity-panel border-amber-400/20 bg-amber-400/[0.015]">
             <CardContent className="flex gap-3 p-4 text-sm text-amber-200">
               <LineChart className="mt-0.5 h-4 w-4 shrink-0" />
               <p>
-                Income statement and valuation metrics are provided by Financial Modeling Prep. Unsupported fields remain N/A.
+                Deep fundamentals such as TEV, P/E, EBITDA, debt, short interest and dividends are shown as N/A until a dedicated fundamentals API is connected. This keeps the UI honest while preserving the existing backend.
               </p>
             </CardContent>
           </Card>

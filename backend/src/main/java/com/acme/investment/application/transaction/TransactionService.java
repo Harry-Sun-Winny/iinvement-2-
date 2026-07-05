@@ -2,6 +2,7 @@ package com.acme.investment.application.transaction;
 
 import com.acme.investment.application.audit.AuditLogService;
 import com.acme.investment.application.holding.HoldingService;
+import com.acme.investment.application.snapshot.PortfolioSnapshotBackfillService;
 import com.acme.investment.domain.transaction.Transaction;
 import com.acme.investment.infrastructure.persistence.asset.AssetEntity;
 import com.acme.investment.infrastructure.persistence.asset.AssetJpaRepository;
@@ -25,19 +26,23 @@ public class TransactionService {
     private final AssetJpaRepository assetRepo;
     private final AuditLogService auditLogService;
     private final HoldingService holdingService;
+    private final PortfolioSnapshotBackfillService portfolioSnapshotBackfillService;
 
     public TransactionService(TransactionJpaRepository transactionRepo,
                               PortfolioJpaRepository portfolioRepo,
                               AssetJpaRepository assetRepo,
                               AuditLogService auditLogService,
-                              HoldingService holdingService) {
+                              HoldingService holdingService,
+                              PortfolioSnapshotBackfillService portfolioSnapshotBackfillService) {
         this.transactionRepo = transactionRepo;
         this.portfolioRepo = portfolioRepo;
         this.assetRepo = assetRepo;
         this.auditLogService = auditLogService;
         this.holdingService = holdingService;
+        this.portfolioSnapshotBackfillService = portfolioSnapshotBackfillService;
     }
 
+    @Transactional(readOnly = true)
     public List<Transaction> listByPortfolio(UUID portfolioId, UUID userId) {
         var portfolio = portfolioRepo.findById(portfolioId)
                 .filter(p -> p.getUser().getId().equals(userId))
@@ -78,6 +83,7 @@ public class TransactionService {
         TransactionEntity saved = transactionRepo.save(entity);
 
         holdingService.recalculate(portfolioId);
+        portfolioSnapshotBackfillService.runIncrementalBackfillAsync(portfolioId);
         auditLogService.log(userId, "TRANSACTION", saved.getId(), "CREATE", null, toAuditMap(saved));
 
         return saved.toDomain();
@@ -99,6 +105,7 @@ public class TransactionService {
         Map<String, Object> before = toAuditMap(entity);
         transactionRepo.delete(entity);
         holdingService.recalculate(portfolioId);
+        portfolioSnapshotBackfillService.runIncrementalBackfillAsync(portfolioId);
         auditLogService.log(userId, "TRANSACTION", id, "DELETE", before, null);
     }
 
@@ -122,6 +129,7 @@ public class TransactionService {
         entity.setNotes(notes);
         TransactionEntity saved = transactionRepo.save(entity);
         holdingService.recalculate(portfolioId);
+        portfolioSnapshotBackfillService.runIncrementalBackfillAsync(portfolioId);
         auditLogService.log(userId, "TRANSACTION", saved.getId(), "UPDATE", before, toAuditMap(saved));
         return saved.toDomain();
     }

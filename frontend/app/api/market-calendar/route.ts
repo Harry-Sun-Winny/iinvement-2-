@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { CalendarCategory, CalendarImpact, MarketCalendarEvent } from "@/types/calendar";
 
 const FINNHUB_BASE = "https://finnhub.io/api/v1";
@@ -107,24 +107,37 @@ function fallbackEvents(category: CalendarCategory, from: string, to: string): M
 async function fetchFinnhub(category: CalendarCategory, from: string, to: string, token: string): Promise<MarketCalendarEvent[]> {
   const endpoint = category === "economic" ? "calendar/economic" : category === "earnings" ? "calendar/earnings" : category === "ipo" ? "calendar/ipo" : null;
   if (!endpoint) return [];
-  const response = await fetch(`${FINNHUB_BASE}/${endpoint}?from=${from}&to=${to}&token=${token}`, { next: { revalidate: 300 } });
-  if (!response.ok) throw new Error(`Finnhub ${response.status}`);
-  const data = await response.json();
-  const rows = category === "economic" ? data.economicCalendar : category === "earnings" ? data.earningsCalendar : data.ipoCalendar;
-  if (!Array.isArray(rows)) return [];
 
-  return rows.map((row: any, index: number) => {
-    const dateValue = String(row.date || row.time || from).slice(0, 10);
-    const timeValue = String(row.time || "08:30").match(/\d{2}:\d{2}/)?.[0] || "08:30";
-    if (category === "earnings") {
-      const session = row.hour === "bmo" ? "Before Market Open" : row.hour === "amc" ? "After Market Close" : "During Market";
-      return baseEvent(category, dateValue, `${row.symbol} Earnings`, index, { time: timeValue, symbol: row.symbol, company: row.symbol, session, epsEstimate: row.epsEstimate, epsActual: row.epsActual, revenueEstimate: row.revenueEstimate, revenueActual: row.revenueActual, surprise: row.epsEstimate && row.epsActual ? ((row.epsActual - row.epsEstimate) / Math.abs(row.epsEstimate)) * 100 : null, impact: "High", sector: "Equities", eventType: "Earnings", volatilityScore: 82 });
-    }
-    if (category === "ipo") {
-      return baseEvent(category, dateValue, `${row.name || row.symbol} IPO`, index, { symbol: row.symbol, company: row.name, exchange: row.exchange, priceRange: row.price || `${row.priceFrom ?? ""} - ${row.priceTo ?? ""}`, eventType: "IPO", volatilityScore: 64 });
-    }
-    return baseEvent(category, dateValue, row.event || "Economic Event", index, { time: timeValue, country: row.country || "Global", countryCode: row.country || "GL", impact: impact(row.impact), actual: row.actual?.toString(), forecast: (row.estimate ?? row.forecast)?.toString(), previous: row.prev?.toString(), eventType: row.event || "Economic", volatilityScore: impact(row.impact) === "High" ? 90 : impact(row.impact) === "Medium" ? 60 : 30 });
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+  try {
+    const response = await fetch(`${FINNHUB_BASE}/${endpoint}?from=${from}&to=${to}&token=${token}`, { 
+      next: { revalidate: 300 },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) throw new Error(`Finnhub ${response.status}`);
+    const data = await response.json();
+    const rows = category === "economic" ? data.economicCalendar : category === "earnings" ? data.earningsCalendar : data.ipoCalendar;
+    if (!Array.isArray(rows)) return [];
+
+    return rows.map((row: any, index: number) => {
+      const dateValue = String(row.date || row.time || from).slice(0, 10);
+      const timeValue = String(row.time || "08:30").match(/\d{2}:\d{2}/)?.[0] || "08:30";
+      if (category === "earnings") {
+        const session = row.hour === "bmo" ? "Before Market Open" : row.hour === "amc" ? "After Market Close" : "During Market";
+        return baseEvent(category, dateValue, `${row.symbol} Earnings`, index, { time: timeValue, symbol: row.symbol, company: row.symbol, session, epsEstimate: row.epsEstimate, epsActual: row.epsActual, revenueEstimate: row.revenueEstimate, revenueActual: row.revenueActual, surprise: row.epsEstimate && row.epsActual ? ((row.epsActual - row.epsEstimate) / Math.abs(row.epsEstimate)) * 100 : null, impact: "High", sector: "Equities", eventType: "Earnings", volatilityScore: 82 });
+      }
+      if (category === "ipo") {
+        return baseEvent(category, dateValue, `${row.name || row.symbol} IPO`, index, { symbol: row.symbol, company: row.name, exchange: row.exchange, priceRange: row.price || `${row.priceFrom ?? ""} - ${row.priceTo ?? ""}`, eventType: "IPO", volatilityScore: 64 });
+      }
+      return baseEvent(category, dateValue, row.event || "Economic Event", index, { time: timeValue, country: row.country || "Global", countryCode: row.country || "GL", impact: impact(row.impact), actual: row.actual?.toString(), forecast: (row.estimate ?? row.forecast)?.toString(), previous: row.prev?.toString(), eventType: row.event || "Economic", volatilityScore: impact(row.impact) === "High" ? 90 : impact(row.impact) === "Medium" ? 60 : 30 });
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
 }
 
 export async function GET(request: NextRequest) {

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMarketQuote } from "./marketData";
+import { getMarketQuote, getQuoteBatched } from "./marketData";
+import { httpsGet } from "../utils";
+
+import YahooFinanceClass from "yahoo-finance2";
+const yahooFinance = new YahooFinanceClass();
 
 const SYMBOL_ALIASES: Record<string, string> = {
   INTEL: "INTC",
@@ -10,6 +14,7 @@ const SYMBOL_ALIASES: Record<string, string> = {
   MEDIATEK: "2454.TW",
   UMC: "UMC",
   ASE: "ASX",
+  SANTA: "SAN",
 };
 
 function getSymbolCandidates(symbol: string) {
@@ -70,11 +75,10 @@ async function getUsdRate(currency: string): Promise<number> {
   const actualCurrency = sub ? sub.parent : currency;
 
   try {
-    const res = await fetch(
+    const data = await httpsGet(
       `https://query1.finance.yahoo.com/v8/finance/chart/${actualCurrency}USD=X?interval=1d&range=1d`,
-      { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 60 } },
+      { "User-Agent": "Mozilla/5.0" }
     );
-    const data = await res.json();
     const rate = data.chart?.result?.[0]?.meta?.regularMarketPrice ?? 1;
     return sub ? rate / sub.divisor : rate;
   } catch {
@@ -123,3 +127,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Failed", details: String(error) }, { status: 500 });
   }
 }
+

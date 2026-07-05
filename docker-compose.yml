@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: investment
       POSTGRES_PASSWORD: investment_dev_password
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -32,6 +32,7 @@ services:
       SPRING_DATASOURCE_USERNAME: investment
       SPRING_DATASOURCE_PASSWORD: investment_dev_password
       SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
       SECURITY_JWT_SECRET: change-this-secret-before-production
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
@@ -40,19 +41,35 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "8081:8080"
 
   frontend:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_BASE_URL: https://investment-platform-sr64.onrender.com
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8081
     environment:
-      NEXT_PUBLIC_API_BASE_URL: https://investment-platform-sr64.onrender.com
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8081
     depends_on:
       - backend
     ports:
-      - "3000:3000"
+      - "3002:3000"
+
+  db-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    restart: always
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=investment
+      - POSTGRES_USER=investment
+      - POSTGRES_PASSWORD=investment_dev_password
+      - SCHEDULE=0 */2 * * *
+      - BACKUP_KEEP_DAYS=7
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
 
 volumes:
   postgres_data:

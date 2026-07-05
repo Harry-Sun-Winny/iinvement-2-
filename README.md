@@ -64,6 +64,39 @@ Docker:
 docker compose up --build
 ```
 
+## Isolated Run Mode
+
+Use this mode when you want this repo to run alongside another copy of the project without port conflicts.
+
+Ports for this repo:
+
+- Frontend: `3002`
+- Backend: shared `8080`
+- PostgreSQL / Redis: shared through app `3000` backend
+
+Quick start on Windows:
+
+```powershell
+.\start-this-app-isolated.ps1
+```
+
+Docker alternative:
+
+```powershell
+.\start-this-app-docker.cmd
+```
+
+Recommended split when running two app copies side by side:
+
+- Original app: frontend `3000` or `3001`, backend `8080`
+- This repo: frontend `3002`, same backend `8080`
+
+Start both project copies from this machine:
+
+```powershell
+.\start-both-apps.ps1
+```
+
 ## Deployment
 
 The backend is packaged as a container and expects PostgreSQL, Redis, JWT secret, and OpenAI API key through environment variables. Production deployments should terminate TLS at an ingress/load balancer, run database migrations during release, and restrict outbound AI/news calls through approved provider integrations.

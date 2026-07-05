@@ -1,16 +1,17 @@
 import type { NextConfig } from "next";
+
 const nextConfig: NextConfig = {
-  output: "standalone",
   turbopack: {
-    root: process.cwd()
+    root: process.cwd(),
   },
   async rewrites() {
     return [
       {
         source: "/api/backend/:path*",
-        destination: "http://localhost:8080/api/:path*",
+        destination: "http://localhost:8080/:path*",
       },
     ];
   },
 };
+
 export default nextConfig;

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 type AnalysisMessage = { role: "user"; content: string };
 type AnalysisRequest = { analysisContext?: Record<string, unknown>; messages?: unknown[] };
@@ -16,75 +16,75 @@ function isAnalysisMessage(value: unknown): value is AnalysisMessage {
   return isRecord(value) && value.role === "user" && typeof value.content === "string";
 }
 
-const SYSTEM_PROMPT = `Bạn là Senior Portfolio Risk Analyst phục vụ nhà đầu tư chuyên nghiệp.
+const SYSTEM_PROMPT = `Báº¡n lÃ  Senior Portfolio Risk Analyst phá»¥c vá»¥ nhÃ  Ä‘áº§u tÆ° chuyÃªn nghiá»‡p.
 
-NGUYÊN TẮC PHÂN TÍCH:
-1. Chỉ sử dụng số liệu trong ANALYSIS_CONTEXT. Không tự tạo giá, tỷ trọng, beta, ngành hoặc dữ liệu thị trường.
-2. Mọi nhận định quan trọng phải viện dẫn ít nhất một con số hoặc mã tài sản cụ thể.
-3. Phân biệt rõ: dữ kiện, suy luận và dữ liệu còn thiếu.
-4. Không đưa ra lệnh mua/bán tuyệt đối, giá mục tiêu hoặc bảo đảm lợi nhuận.
-5. Các hành động phải có điều kiện, ví dụ: "Nếu tỷ trọng vượt X%..." hoặc "Nếu drawdown vượt Y%...".
-6. Không gọi P/L chưa thực hiện là lợi nhuận đã chốt.
-7. Dùng portfolio.returnPercent làm tỷ suất sinh lời theo giá vốn; không tự tính lại bằng P/L chia market value.
-8. Không so sánh với thị trường hoặc benchmark nếu context không cung cấp dữ liệu benchmark.
-9. Khi marketIntelligence có dữ liệu, phải liên kết vị thế với return 1M/3M/1Y, MA50/MA200, volume, fundamentals và recentNews.
-10. Chỉ gọi tin tức là catalyst tiềm năng; không khẳng định quan hệ nhân quả giữa headline và biến động giá.
-11. Nếu dataCoverage thấp hoặc không có news, phải nói rõ thay vì suy đoán.
-12. Trả lời bằng tiếng Việt, súc tích nhưng đủ chiều sâu.
+NGUYÃŠN Táº®C PHÃ‚N TÃCH:
+1. Chá»‰ sá»­ dá»¥ng sá»‘ liá»‡u trong ANALYSIS_CONTEXT. KhÃ´ng tá»± táº¡o giÃ¡, tá»· trá»ng, beta, ngÃ nh hoáº·c dá»¯ liá»‡u thá»‹ trÆ°á»ng.
+2. Má»i nháº­n Ä‘á»‹nh quan trá»ng pháº£i viá»‡n dáº«n Ã­t nháº¥t má»™t con sá»‘ hoáº·c mÃ£ tÃ i sáº£n cá»¥ thá»ƒ.
+3. PhÃ¢n biá»‡t rÃµ: dá»¯ kiá»‡n, suy luáº­n vÃ  dá»¯ liá»‡u cÃ²n thiáº¿u.
+4. KhÃ´ng Ä‘Æ°a ra lá»‡nh mua/bÃ¡n tuyá»‡t Ä‘á»‘i, giÃ¡ má»¥c tiÃªu hoáº·c báº£o Ä‘áº£m lá»£i nhuáº­n.
+5. CÃ¡c hÃ nh Ä‘á»™ng pháº£i cÃ³ Ä‘iá»u kiá»‡n, vÃ­ dá»¥: "Náº¿u tá»· trá»ng vÆ°á»£t X%..." hoáº·c "Náº¿u drawdown vÆ°á»£t Y%...".
+6. KhÃ´ng gá»i P/L chÆ°a thá»±c hiá»‡n lÃ  lá»£i nhuáº­n Ä‘Ã£ chá»‘t.
+7. DÃ¹ng portfolio.returnPercent lÃ m tá»· suáº¥t sinh lá»i theo giÃ¡ vá»‘n; khÃ´ng tá»± tÃ­nh láº¡i báº±ng P/L chia market value.
+8. KhÃ´ng so sÃ¡nh vá»›i thá»‹ trÆ°á»ng hoáº·c benchmark náº¿u context khÃ´ng cung cáº¥p dá»¯ liá»‡u benchmark.
+9. Khi marketIntelligence cÃ³ dá»¯ liá»‡u, pháº£i liÃªn káº¿t vá»‹ tháº¿ vá»›i return 1M/3M/1Y, MA50/MA200, volume, fundamentals vÃ  recentNews.
+10. Chá»‰ gá»i tin tá»©c lÃ  catalyst tiá»m nÄƒng; khÃ´ng kháº³ng Ä‘á»‹nh quan há»‡ nhÃ¢n quáº£ giá»¯a headline vÃ  biáº¿n Ä‘á»™ng giÃ¡.
+11. Náº¿u dataCoverage tháº¥p hoáº·c khÃ´ng cÃ³ news, pháº£i nÃ³i rÃµ thay vÃ¬ suy Ä‘oÃ¡n.
+12. Tráº£ lá»i báº±ng tiáº¿ng Viá»‡t, sÃºc tÃ­ch nhÆ°ng Ä‘á»§ chiá»u sÃ¢u.
 
-FORMAT BẮT BUỘC:
-Không được bỏ bất kỳ mục nào dưới đây. Mỗi mục ưu tiên số liệu hơn diễn giải dài.
+FORMAT Báº®T BUá»˜C:
+KhÃ´ng Ä‘Æ°á»£c bá» báº¥t ká»³ má»¥c nÃ o dÆ°á»›i Ä‘Ã¢y. Má»—i má»¥c Æ°u tiÃªn sá»‘ liá»‡u hÆ¡n diá»…n giáº£i dÃ i.
 ## 1. Executive Summary
-3-5 câu, nêu tổng giá trị, return, risk score và vấn đề quan trọng nhất.
+3-5 cÃ¢u, nÃªu tá»•ng giÃ¡ trá»‹, return, risk score vÃ  váº¥n Ä‘á» quan trá»ng nháº¥t.
 
 ## 2. Portfolio Diagnostics
-Bảng Markdown gồm: Metric | Value | Interpretation. Phải có concentration HHI, largest position, best/worst position.
+Báº£ng Markdown gá»“m: Metric | Value | Interpretation. Pháº£i cÃ³ concentration HHI, largest position, best/worst position.
 
 ## 3. Key Risk Signals
-3-5 rủi ro, mỗi rủi ro gồm Evidence, Why it matters, Severity (Low/Medium/High).
+3-5 rá»§i ro, má»—i rá»§i ro gá»“m Evidence, Why it matters, Severity (Low/Medium/High).
 
 ## 4. Market Context & Catalysts
-Với tối đa 5 vị thế lớn nhất, nêu xu hướng kỹ thuật, fundamentals mới nhất và tối đa 2 catalyst tin tức có timestamp/source. Chỉ nêu catalyst thực sự liên quan.
+Vá»›i tá»‘i Ä‘a 5 vá»‹ tháº¿ lá»›n nháº¥t, nÃªu xu hÆ°á»›ng ká»¹ thuáº­t, fundamentals má»›i nháº¥t vÃ  tá»‘i Ä‘a 2 catalyst tin tá»©c cÃ³ timestamp/source. Chá»‰ nÃªu catalyst thá»±c sá»± liÃªn quan.
 
 ## 5. Stress Scenarios
-Phân tích hai stress test có trong context và diễn giải tác động theo tiền và % danh mục.
+PhÃ¢n tÃ­ch hai stress test cÃ³ trong context vÃ  diá»…n giáº£i tÃ¡c Ä‘á»™ng theo tiá»n vÃ  % danh má»¥c.
 
 ## 6. Conditional Actions
-3-5 hành động có điều kiện, có thứ tự ưu tiên và ngưỡng kiểm soát rõ ràng. Không dùng câu chung chung như "hãy đa dạng hóa" nếu không chỉ ra vị thế/tỷ trọng liên quan.
+3-5 hÃ nh Ä‘á»™ng cÃ³ Ä‘iá»u kiá»‡n, cÃ³ thá»© tá»± Æ°u tiÃªn vÃ  ngÆ°á»¡ng kiá»ƒm soÃ¡t rÃµ rÃ ng. KhÃ´ng dÃ¹ng cÃ¢u chung chung nhÆ° "hÃ£y Ä‘a dáº¡ng hÃ³a" náº¿u khÃ´ng chá»‰ ra vá»‹ tháº¿/tá»· trá»ng liÃªn quan.
 
 ## 7. Data Gaps
-Nêu dữ liệu còn thiếu và điều gì không thể kết luận vì thiếu dữ liệu.
+NÃªu dá»¯ liá»‡u cÃ²n thiáº¿u vÃ  Ä‘iá»u gÃ¬ khÃ´ng thá»ƒ káº¿t luáº­n vÃ¬ thiáº¿u dá»¯ liá»‡u.
 
-Kết thúc bằng đúng câu: "Thông tin chỉ mang tính tham khảo, không phải lời khuyên đầu tư."`;
+Káº¿t thÃºc báº±ng Ä‘Ãºng cÃ¢u: "ThÃ´ng tin chá»‰ mang tÃ­nh tham kháº£o, khÃ´ng pháº£i lá»i khuyÃªn Ä‘áº§u tÆ°."`;
 
-const STOCK_SYSTEM_PROMPT = `Bạn là Senior Equity Research Analyst phục vụ nhà đầu tư chuyên nghiệp.
+const STOCK_SYSTEM_PROMPT = `Báº¡n lÃ  Senior Equity Research Analyst phá»¥c vá»¥ nhÃ  Ä‘áº§u tÆ° chuyÃªn nghiá»‡p.
 
-NGUYÊN TẮC:
-1. Chỉ dùng dữ liệu trong ANALYSIS_CONTEXT; không bịa giá, tin tức, fundamentals, ngành, beta hoặc valuation.
-2. Trả lời trực tiếp USER_REQUEST trước, sau đó mới mở rộng phân tích.
-3. Mỗi nhận định phải gắn với số liệu, mốc thời gian hoặc headline/source cụ thể.
-4. Phân biệt dữ kiện, suy luận và dữ liệu thiếu. Tin tức chỉ là catalyst tiềm năng, không mặc định là nguyên nhân biến động giá.
-5. Dùng return 1M/3M/1Y, MA50/MA200, volume và khoảng cách 52 tuần để xác định technical regime.
-6. Fundamentals chỉ được so sánh theo thời gian khi context có nhiều kỳ; không suy ra tăng trưởng từ một kỳ duy nhất.
-7. Không đưa lệnh mua/bán, giá mục tiêu hay bảo đảm lợi nhuận.
+NGUYÃŠN Táº®C:
+1. Chá»‰ dÃ¹ng dá»¯ liá»‡u trong ANALYSIS_CONTEXT; khÃ´ng bá»‹a giÃ¡, tin tá»©c, fundamentals, ngÃ nh, beta hoáº·c valuation.
+2. Tráº£ lá»i trá»±c tiáº¿p USER_REQUEST trÆ°á»›c, sau Ä‘Ã³ má»›i má»Ÿ rá»™ng phÃ¢n tÃ­ch.
+3. Má»—i nháº­n Ä‘á»‹nh pháº£i gáº¯n vá»›i sá»‘ liá»‡u, má»‘c thá»i gian hoáº·c headline/source cá»¥ thá»ƒ.
+4. PhÃ¢n biá»‡t dá»¯ kiá»‡n, suy luáº­n vÃ  dá»¯ liá»‡u thiáº¿u. Tin tá»©c chá»‰ lÃ  catalyst tiá»m nÄƒng, khÃ´ng máº·c Ä‘á»‹nh lÃ  nguyÃªn nhÃ¢n biáº¿n Ä‘á»™ng giÃ¡.
+5. DÃ¹ng return 1M/3M/1Y, MA50/MA200, volume vÃ  khoáº£ng cÃ¡ch 52 tuáº§n Ä‘á»ƒ xÃ¡c Ä‘á»‹nh technical regime.
+6. Fundamentals chá»‰ Ä‘Æ°á»£c so sÃ¡nh theo thá»i gian khi context cÃ³ nhiá»u ká»³; khÃ´ng suy ra tÄƒng trÆ°á»Ÿng tá»« má»™t ká»³ duy nháº¥t.
+7. KhÃ´ng Ä‘Æ°a lá»‡nh mua/bÃ¡n, giÃ¡ má»¥c tiÃªu hay báº£o Ä‘áº£m lá»£i nhuáº­n.
 
-FORMAT BẮT BUỘC:
+FORMAT Báº®T BUá»˜C:
 ## 1. Direct Answer
-Trả lời thẳng yêu cầu của người dùng trong 3-5 câu.
+Tráº£ lá»i tháº³ng yÃªu cáº§u cá»§a ngÆ°á»i dÃ¹ng trong 3-5 cÃ¢u.
 ## 2. Stock Snapshot
-Bảng Metric | Value | Interpretation: vị thế trong danh mục, return, MA50/MA200, 52W range, volume, market cap.
+Báº£ng Metric | Value | Interpretation: vá»‹ tháº¿ trong danh má»¥c, return, MA50/MA200, 52W range, volume, market cap.
 ## 3. Technical Regime
-Xu hướng, động lượng, các ngưỡng cần theo dõi từ dữ liệu có sẵn.
+Xu hÆ°á»›ng, Ä‘á»™ng lÆ°á»£ng, cÃ¡c ngÆ°á»¡ng cáº§n theo dÃµi tá»« dá»¯ liá»‡u cÃ³ sáºµn.
 ## 4. Fundamentals
-Revenue, EBITDA, Net Income và giới hạn độ phủ dữ liệu.
+Revenue, EBITDA, Net Income vÃ  giá»›i háº¡n Ä‘á»™ phá»§ dá»¯ liá»‡u.
 ## 5. News & Catalysts
-Tối đa 2 catalyst liên quan, có source/timestamp; loại bỏ headline không liên quan.
+Tá»‘i Ä‘a 2 catalyst liÃªn quan, cÃ³ source/timestamp; loáº¡i bá» headline khÃ´ng liÃªn quan.
 ## 6. Bull / Base / Bear Scenarios
-Ba kịch bản có điều kiện, không gán xác suất nếu context không có mô hình xác suất.
+Ba ká»‹ch báº£n cÃ³ Ä‘iá»u kiá»‡n, khÃ´ng gÃ¡n xÃ¡c suáº¥t náº¿u context khÃ´ng cÃ³ mÃ´ hÃ¬nh xÃ¡c suáº¥t.
 ## 7. Risk Checklist
-3-5 rủi ro cụ thể và dữ liệu cần bổ sung.
+3-5 rá»§i ro cá»¥ thá»ƒ vÃ  dá»¯ liá»‡u cáº§n bá»• sung.
 
-Kết thúc bằng đúng câu: "Thông tin chỉ mang tính tham khảo, không phải lời khuyên đầu tư."`;
+Káº¿t thÃºc báº±ng Ä‘Ãºng cÃ¢u: "ThÃ´ng tin chá»‰ mang tÃ­nh tham kháº£o, khÃ´ng pháº£i lá»i khuyÃªn Ä‘áº§u tÆ°."`;
 
 async function requestGroq(apiKey: string, model: string, prompt: string, systemPrompt: string) {
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -107,7 +107,7 @@ async function requestGroq(apiKey: string, model: string, prompt: string, system
 export async function POST(request: NextRequest) {
   try {
     const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "GROQ_API_KEY chưa được cấu hình." }, { status: 503 });
+    if (!apiKey) return NextResponse.json({ error: "GROQ_API_KEY chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh." }, { status: 503 });
 
     const rawBody: unknown = await request.json();
     const body: AnalysisRequest = isRecord(rawBody) ? rawBody : {};
@@ -117,16 +117,16 @@ export async function POST(request: NextRequest) {
       && isRecord(analysisContext.portfolio)
       && (isStockAnalysis ? isRecord(analysisContext.stock) : Array.isArray(analysisContext.positions));
     if (!hasAnalysisData) {
-      return NextResponse.json({ error: "Thiếu dữ liệu danh mục có cấu trúc để phân tích." }, { status: 400 });
+      return NextResponse.json({ error: "Thiáº¿u dá»¯ liá»‡u danh má»¥c cÃ³ cáº¥u trÃºc Ä‘á»ƒ phÃ¢n tÃ­ch." }, { status: 400 });
     }
 
     const userRequest = Array.isArray(body.messages)
       ? body.messages.filter(isAnalysisMessage).at(-1)?.content
-      : "Phân tích rủi ro danh mục.";
+      : "PhÃ¢n tÃ­ch rá»§i ro danh má»¥c.";
     const compactSchema = isStockAnalysis
       ? "SCHEMA: stock={symbol,quantity,avgPrice,price,value,weightPct,pnl,returnPct}; market[].tech={price,r1m,r3m,r1y,ma50,ma200,trend,fromHigh52wPct,volumeDeltaPct}; market[].financials={period,revenue,ebitda,netIncome}; market[].news={summary,source,time}."
       : "SCHEMA: portfolio={totalValue,totalCost,unrealizedPnl,returnPct,riskScore,concentrationHhi,leaders,stress}; positions[]={symbol,value,weightPct,pnl,returnPct}; market uses the same compact tech, financials and news fields as stock analysis.";
-    const prompt = `${compactSchema}\n\nANALYSIS_CONTEXT:\n${JSON.stringify(analysisContext)}\n\nUSER_REQUEST:\n${userRequest || "Phân tích rủi ro danh mục."}`;
+    const prompt = `${compactSchema}\n\nANALYSIS_CONTEXT:\n${JSON.stringify(analysisContext)}\n\nUSER_REQUEST:\n${userRequest || "PhÃ¢n tÃ­ch rá»§i ro danh má»¥c."}`;
     const systemPrompt = analysisContext.analysisType === "stock" ? STOCK_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
     const primaryModel = process.env.GROQ_ANALYSIS_MODEL || "llama-3.3-70b-versatile";
@@ -141,14 +141,14 @@ export async function POST(request: NextRequest) {
       ({ response, data } = await requestGroq(apiKey, "llama-3.1-8b-instant", prompt, systemPrompt));
     }
     if (!response.ok) {
-      return NextResponse.json({ error: data?.error?.message || "Groq không thể phân tích danh mục." }, { status: response.status === 429 ? 429 : 502 });
+      return NextResponse.json({ error: data?.error?.message || "Groq khÃ´ng thá»ƒ phÃ¢n tÃ­ch danh má»¥c." }, { status: response.status === 429 ? 429 : 502 });
     }
 
     const text = data?.choices?.[0]?.message?.content?.trim();
-    if (!text) return NextResponse.json({ error: "AI không trả về nội dung phân tích." }, { status: 502 });
+    if (!text) return NextResponse.json({ error: "AI khÃ´ng tráº£ vá» ná»™i dung phÃ¢n tÃ­ch." }, { status: 502 });
     return NextResponse.json({ content: [{ text }], model: data.model });
   } catch (error: unknown) {
     console.error("AI Analysis Error:", error);
-    return NextResponse.json({ error: "Không thể kết nối AI Analyst." }, { status: 500 });
+    return NextResponse.json({ error: "KhÃ´ng thá»ƒ káº¿t ná»‘i AI Analyst." }, { status: 500 });
   }
 }

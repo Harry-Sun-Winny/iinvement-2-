@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BarChart3, Bot, LogOut, Search, TrendingUp, User } from "lucide-react";
+import { Search } from "lucide-react";
+import MarketStatus from "./components/MarketStatus";
+import SectorPerformance from "./components/SectorPerformance";
+import Leaderboard from "./components/Leaderboard";
+import MarketTable from "./components/MarketTable";
+import LoadingSkeleton from "./components/LoadingSkeleton";
+import EmptyState from "./components/EmptyState";
+import ErrorState from "./components/ErrorState";
+import WatchlistSidebar from "./components/WatchlistSidebar";
 
 interface MarketItem {
   symbol: string;
@@ -70,6 +78,7 @@ export default function MarketPage() {
   const [activeRange, setActiveRange] = useState("1d");
   const [data, setData] = useState<Record<string, MarketItem>>({});
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -79,12 +88,12 @@ export default function MarketPage() {
   const debounceRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!localStorage.getItem("token")) {
+    if (typeof window === "undefined" || !localStorage.getItem("token")) {
       window.location.href = "/login";
       return;
     }
     loadCategory(activeCategory, activeRange);
-    const interval = setInterval(() => loadCategory(activeCategory, activeRange), 30000);
+    const interval = setInterval(() => loadCategory(activeCategory, activeRange), 30005);
     return () => clearInterval(interval);
   }, [activeCategory, activeRange]);
 
@@ -104,17 +113,30 @@ export default function MarketPage() {
 
   async function loadCategory(cat: string, range: string) {
     setLoading(true);
+    setError(null);
     const symbols = cat === "Indices" ? INDICES : CATEGORIES[cat] ?? [];
     const results: Record<string, MarketItem> = {};
+    let fetchFailedCount = 0;
     await Promise.all(symbols.map(async ({ symbol, name }) => {
       try {
         const res = await fetch(`/api/stock-price?symbol=${encodeURIComponent(symbol)}&range=${range}`);
+        if (!res.ok) {
+          fetchFailedCount++;
+          return;
+        }
         const d = await res.json();
-        if (d.price) results[symbol] = { symbol, name, price: d.price, change: d.change, changePercent: d.changePercent, changeRange: d.changeRange ?? null, changePctRange: d.changePctRange ?? null, dataQuality: d.dataQuality };
-      } catch {}
+        if (d.price) {
+          results[symbol] = { symbol, name, price: d.price, change: d.change, changePercent: d.changePercent, changeRange: d.changeRange ?? null, changePctRange: d.changePctRange ?? null, dataQuality: d.dataQuality };
+        }
+      } catch {
+        fetchFailedCount++;
+      }
     }));
     setData(results);
     setLoading(false);
+    if (fetchFailedCount === symbols.length && symbols.length > 0) {
+      setError("Không thể tải kết nối với máy chủ giá dữ liệu.");
+    }
   }
 
   function handleSearchInput(val: string) {
@@ -150,123 +172,100 @@ export default function MarketPage() {
   function getChangePct(d: MarketItem) { return activeRange === "1d" ? d.changePercent : (d.changePctRange ?? null); }
 
   return (
-    <div className="app-shell flex">
-      <aside className="app-sidebar fixed flex h-full w-64 flex-col gap-2 p-5">
-        <div className="mb-10 px-2">
-          <div className="flex items-center gap-2">
-            <span className="rainbow-bg grid h-6 w-6 place-items-center rounded text-xs font-black text-white">↗</span>
-            <h1 className="text-xl font-black text-white">Investment</h1>
-          </div>
-          <p className="mt-1 text-sm text-slate-400">Platform</p>
-        </div>
-        <button onClick={() => window.location.href = "/"} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-[#54a0ff]"><BarChart3 className="h-4 w-4" />Dashboard</button>
-        <button className="rainbow-bg flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold text-white"><TrendingUp className="h-4 w-4" />Market</button>
-        <button onClick={() => window.location.href = "/analysis"} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-[#54a0ff]"><Bot className="h-4 w-4" />AI Analysis</button>
-        <button onClick={() => window.location.href = "/account"} className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-[#54a0ff]"><User className="h-4 w-4" />Tài khoản</button>
-        <button onClick={() => { localStorage.removeItem("token"); window.location.href = "/login"; }} className="mt-auto flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold text-slate-400 hover:bg-red-500/10 hover:text-red-400"><LogOut className="h-4 w-4" />Đăng xuất</button>
-      </aside>
-
-      <main className="ml-64 flex-1 p-8">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-7">
-            <p className="text-sm font-medium text-[#54a0ff]">Thị trường toàn cầu</p>
-            <h2 className="rainbow-text mt-2 text-3xl font-black">Market</h2>
-          </div>
-
-          <div ref={searchRef} className="relative mb-7">
-            <div className="app-panel flex items-center gap-3 px-4 py-3 focus-within:border-orange-400">
-              <Search className="h-4 w-4 text-[#54a0ff]" />
-              <input type="text" value={search} onChange={e => handleSearchInput(e.target.value)} onFocus={() => suggestions.length > 0 && setShowSuggestions(true)} placeholder="Tìm kiếm cổ phiếu, ETF, crypto..." className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 outline-none" />
-              {search && <button onClick={() => { setSearch(""); setSuggestions([]); setSearchResult(null); }} className="text-slate-500 hover:text-[#54a0ff]">✕</button>}
+    <div className="flex flex-1 h-full overflow-hidden">
+      {/* Left Workspace Desk */}
+      <main className="w-[800px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
+        {searchResult && (
+          <div className="antigravity-panel p-4 flex items-center justify-between hover:bg-white/[0.01] transition-all bg-transparent">
+            <div>
+              <p className="text-lg font-bold text-white">{searchResult.symbol}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{searchResult.name}</p>
             </div>
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
-                {suggestions.map(s => (
-                  <button key={s.symbol} onClick={() => handleSelectSuggestion(s)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-800">
-                    <div className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-xs font-black text-[#54a0ff]">{s.symbol.charAt(0)}</div>
-                    <div>
-                      <p className="rainbow-text text-sm font-black">{s.symbol}</p>
-                      <p className="text-xs text-slate-400">{s.name} · {s.type}</p>
-                    </div>
+            <div className="text-right">
+              <p className="text-xl font-bold text-white">${searchResult.price.toFixed(2)}</p>
+              <p className={`text-xs font-semibold mt-1 ${(getChange(searchResult) ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {(getChange(searchResult) ?? 0) >= 0 ? "▲" : "▼"} {Math.abs(getChange(searchResult) ?? 0).toFixed(2)} ({Math.abs(getChangePct(searchResult) ?? 0).toFixed(2)}%)
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="antigravity-panel antigravity-float-slow overflow-hidden">
+          {/* Embedded Header Controls */}
+          <div className="flex flex-col border-b border-white/5 p-6 gap-4 bg-white/[0.01]">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <h2 className="text-sm font-bold text-white tracking-widest uppercase">Chỉ số thị trường</h2>
+
+              {/* Search input nested inside table header */}
+              <div ref={searchRef} className="relative flex-grow max-w-md">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 focus-within:border-white/20 transition-all">
+                  <Search className="h-3.5 w-3.5 text-slate-400" />
+                  <input type="text" value={search} onChange={e => handleSearchInput(e.target.value)} onFocus={() => suggestions.length > 0 && setShowSuggestions(true)} placeholder="Tìm kiếm cổ phiếu, ETF, crypto..." className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 outline-none" />
+                  {search && <button onClick={() => { setSearch(""); setSuggestions([]); setSearchResult(null); }} className="text-slate-450 hover:text-white text-xs">✕</button>}
+                </div>
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-white/5 bg-[#0b0c10] shadow-2xl">
+                    {suggestions.map(s => (
+                      <button key={s.symbol} onClick={() => handleSelectSuggestion(s)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/5">
+                        <div className="grid h-8 w-8 place-items-center rounded-lg bg-white/5 text-xs font-bold text-white">{s.symbol.charAt(0)}</div>
+                        <div>
+                          <p className="text-sm font-semibold text-white">{s.symbol}</p>
+                          <p className="text-[10px] text-slate-400">{s.name} · {s.type}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Range Selectors */}
+              <div className="flex bg-white/5 p-1 rounded-lg border border-white/5 shrink-0 self-end md:self-auto">
+                {[["1d", "1 Ngày"], ["5d", "1 Tuần"], ["1y", "1 Năm"]].map(([r, label]) => (
+                  <button key={r} onClick={() => setActiveRange(r)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-300 ${activeRange === r ? "bg-white/10 text-white shadow-sm" : "text-slate-400 hover:text-white"}`}>
+                    {label}
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Categories Tabs inside Table Header */}
+            <div className="flex flex-wrap gap-1.5 mt-2 border-t border-white/5 pt-4">
+              {["Indices", ...Object.keys(CATEGORIES)].map(cat => (
+                <button key={cat} onClick={() => setActiveCategory(cat)} className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-300 ${activeCategory === cat ? "bg-white/10 text-white shadow-sm border border-white/10" : "text-slate-400 hover:bg-white/5 hover:text-white border border-transparent"}`}>
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Table Content Container */}
+          <div className="p-6">
+            {error ? (
+              <ErrorState message={error} onRetry={() => loadCategory(activeCategory, activeRange)} />
+            ) : loading ? (
+              <LoadingSkeleton />
+            ) : symbols.length === 0 ? (
+              <EmptyState message="Không có tài sản nào thuộc danh mục này." />
+            ) : (
+              <div className="overflow-x-auto relative max-h-[600px] no-scrollbar">
+                <MarketTable symbols={symbols} data={data} activeRange={activeRange} />
+              </div>
             )}
           </div>
-
-          {searchResult && (
-            <div className="app-panel mb-7 flex items-center justify-between p-4">
-              <div>
-                <p className="rainbow-text text-lg font-black">{searchResult.symbol}</p>
-                <p className="text-sm text-slate-400">{searchResult.name}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-black text-white">${searchResult.price.toFixed(2)}</p>
-                <p className={`text-sm font-bold ${(getChange(searchResult) ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
-                  {(getChange(searchResult) ?? 0) >= 0 ? "▲" : "▼"} {Math.abs(getChange(searchResult) ?? 0).toFixed(2)} ({Math.abs(getChangePct(searchResult) ?? 0).toFixed(2)}%)
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="mb-4 flex gap-2">
-            {[["1d", "1 Ngày"], ["5d", "1 Tuần"], ["1y", "1 Năm"]].map(([r, label]) => (
-              <button key={r} onClick={() => setActiveRange(r)} className={`rounded-lg px-4 py-2 text-xs font-black transition-all ${activeRange === r ? "rainbow-bg text-white" : "border border-slate-800 bg-slate-900 text-slate-400 hover:text-[#c44dff]"}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mb-6 flex flex-wrap gap-2">
-            {["Indices", ...Object.keys(CATEGORIES)].map(cat => (
-              <button key={cat} onClick={() => setActiveCategory(cat)} className={`rounded-lg px-4 py-2 text-sm font-bold transition-all ${activeCategory === cat ? "rainbow-bg text-white" : "border border-slate-800 bg-slate-900 text-slate-400 hover:text-[#54a0ff]"}`}>
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          <div className="app-panel overflow-hidden">
-            <div className="grid grid-cols-5 border-b border-slate-800 px-4 py-3 rainbow-text text-xs font-bold">
-              <span>Tên</span><span className="text-right">Giá</span><span className="text-right">Thay đổi</span><span className="text-right">% Thay đổi</span><span className="text-right">Dữ liệu</span>
-            </div>
-            {loading && <div className="p-8 text-center text-sm text-slate-400">Đang tải dữ liệu...</div>}
-            {!loading && symbols.map(({ symbol, name }) => {
-              const d = data[symbol];
-              const chg = d ? getChange(d) : null;
-              const chgPct = d ? getChangePct(d) : null;
-              return (
-                <div key={symbol} className="grid grid-cols-5 items-center border-b border-slate-800/60 px-4 py-3.5 transition-colors hover:bg-slate-800/50">
-                  <div className="flex items-center gap-3">
-                    <div className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-xs font-black text-[#54a0ff]">{symbol.replace("^", "").charAt(0)}</div>
-                    <div>
-                      <p className="text-sm font-black text-[#54a0ff]">{symbol.replace("^", "")}</p>
-                      <p className="text-xs text-slate-400">{name}</p>
-                    </div>
-                  </div>
-                  <p className="text-right text-sm font-black text-white">{d ? d.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</p>
-                  <p className={`text-right text-sm font-bold ${chg == null ? "text-slate-500" : chg >= 0 ? "text-green-400" : "text-red-400"}`}>{chg != null ? `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}</p>
-                  <div className="text-right">
-                    {chgPct != null ? (
-                      <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${chgPct >= 0 ? "bg-green-400/10 text-green-400" : "bg-red-400/10 text-red-400"}`}>{chgPct >= 0 ? "▲" : "▼"} {Math.abs(chgPct).toFixed(2)}%</span>
-                    ) : <span className="text-sm text-slate-500">—</span>}
-                  </div>
-                  <div className="text-right">
-                    {d?.dataQuality ? (
-                      <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${d.dataQuality.status === "OK" ? "bg-green-400/10 text-green-400" : "bg-yellow-400/10 text-yellow-300"}`}>
-                        {d.dataQuality.status === "OK" ? "OK" : "WARN"} · {d.dataQuality.primarySource}
-                      </span>
-                    ) : <span className="text-sm text-slate-500">—</span>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <p className="mt-4 text-center text-xs text-slate-500">
-            Yahoo Finance chart + summary cross-check · Tự động cập nhật sau <span className="rainbow-text">{countdown}s</span>
-          </p>
         </div>
+
+        <p className="text-center text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-4">
+          Yahoo Finance cross-check · Tự động cập nhật sau {countdown}s
+        </p>
       </main>
+
+      {/* Right Analytics Workspace (Bloomberg/TradingView terminal style) */}
+      <div className="flex-1 h-full overflow-y-auto p-6 space-y-6 z-10">
+        <MarketStatus />
+        <WatchlistSidebar />
+        <SectorPerformance />
+        <Leaderboard />
+      </div>
     </div>
   );
 }

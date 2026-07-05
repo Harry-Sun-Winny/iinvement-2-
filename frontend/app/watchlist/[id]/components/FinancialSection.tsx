@@ -20,7 +20,7 @@ interface FinancialSectionProps {
 
 function FinancialSection({ title, description, metrics, loading }: FinancialSectionProps) {
   return (
-    <Card className="border-white/10 bg-white/[0.035]">
+    <Card className="h-full border-white/10 bg-white/[0.035]">
       <CardHeader>
         <CardTitle className="text-base text-white">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>

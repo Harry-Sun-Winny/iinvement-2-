@@ -3,6 +3,9 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import { getTransactions, createTransaction, updateTransaction, deleteTransaction, Transaction, CreateTransactionDto, isUnauthorizedError } from "../../lib/api";
 import PortfolioChart from "./chart";
+import Alert from "@/components/ui/Alert";
+import { Badge } from "@/components/ui/badge";
+import { PortfolioOverviewPanel } from "@/components/dashboard/PortfolioOverviewPanel";
 
 interface SearchResult { symbol: string; name: string; type: string; }
 
@@ -27,12 +30,15 @@ function normalizeType(value: string) {
   return value?.toUpperCase().trim();
 }
 
-function formatQuantity(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return "N/A";
+function formatNumber(value: number, digits = 2) {
   return value.toLocaleString("en-US", {
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-    maximumFractionDigits: 20,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   });
+}
+
+function formatPercent(value: number, digits = 2) {
+  return `${formatNumber(value, digits)}%`;
 }
 
 function computeAllRealizedPnl(transactions: Transaction[]) {
@@ -76,7 +82,7 @@ function computeAllRealizedPnl(transactions: Transaction[]) {
 }
 
 export default function PortfolioPage() {
-  const routeParams = useParams<{ id?: string }>() ?? {};
+  const routeParams = (useParams() as { id?: string }) ?? {};
   const id = routeParams.id ?? "";
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -85,6 +91,9 @@ export default function PortfolioPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [currencyRates, setCurrencyRates] = useState<Record<string, number>>({ USD: 1, USDT: 1, USDC: 1 });
+  const [pricesLoaded, setPricesLoaded] = useState(false);
+  const [currencyRatesLoaded, setCurrencyRatesLoaded] = useState(false);
 
   const [symbol, setSymbol] = useState("");
   const [assetName, setAssetName] = useState("");
@@ -97,6 +106,7 @@ export default function PortfolioPage() {
   const [swapTargetPrice, setSwapTargetPrice] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
+  const [fee, setFee] = useState("0");
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [sectors, setSectors] = useState<Record<string, string>>({});
 
@@ -148,6 +158,7 @@ export default function PortfolioPage() {
     setCurrency(t.currency);
     setDate(t.transactionDate.slice(0, 10));
     setNotes(t.notes || "");
+    setFee(t.fee ? String(t.fee) : "0");
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
     await fetchPriceForDate(t.assetSymbol, t.transactionDate.slice(0, 10));
@@ -168,6 +179,7 @@ export default function PortfolioPage() {
     setEditingTx(null);
     setShowForm(false);
     setSymbol(""); setAssetName(""); setQuantity(""); setPrice(""); setNotes("");
+    setFee("0");
     setType("BUY"); setCurrency("USD");
     setDate(new Date().toISOString().slice(0, 10));
     setError("");
@@ -177,7 +189,8 @@ export default function PortfolioPage() {
     setSymbol(val.toUpperCase());
     setShowSuggestions(true);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (val.length < 1) { setSuggestions([]); return; }
+    setSuggestions([]); // Clear old suggestions immediately like YouTube
+    if (val.length < 1) { return; }
     setSearchLoading(true);
     searchTimeout.current = setTimeout(async () => {
       try {
@@ -223,7 +236,7 @@ export default function PortfolioPage() {
       const available = getAvailableToSell(symbol);
       if (nextQty > available) {
         setQuantity(String(Math.max(available, 0)));
-        setError(`Chỉ có thể bán tối đa ${available.toLocaleString(undefined, { maximumFractionDigits: 6 })} cổ phiếu ${symbol}.`);
+        setError(`Chỉ có thể bán tối đa ${formatNumber(available)} cổ phiếu ${symbol}.`);
         return;
       }
     }
@@ -238,21 +251,21 @@ export default function PortfolioPage() {
       return;
     }
     if (!symbol || !quantity || !price) { setError("Vui lòng điền đầy đủ thông tin"); return; }
-    
+
     const normalizedType = type.toUpperCase();
     const qty = Number(quantity);
     if (!Number.isFinite(qty) || qty <= 0) { setError("Số lượng phải lớn hơn 0"); return; }
-    
+
     // Validate SELL transaction
     if (normalizedType === "SELL") {
       const adjustedHoldings = getAvailableToSell(symbol);
-      
+
       if (qty > adjustedHoldings) {
         setError(`Tổng cổ phiếu bán (${qty}) vượt quá số lượng còn lại (${adjustedHoldings})`);
         return;
       }
     }
-    
+
     // For SWAP, create two transactions: SELL source and BUY target, to keep ledger consistent.
     if (normalizedType === "SWAP") {
       if (!swapTargetSymbol || !swapTargetQuantity || !swapTargetPrice) {
@@ -293,9 +306,8 @@ export default function PortfolioPage() {
     const dto: CreateTransactionDto = {
       assetSymbol: symbol, assetName: assetName || symbol,
       type: normalizedType, quantity: qty, price: Number(price),
-      currency, transactionDate: date, notes,
+      currency, transactionDate: date, notes, fee: Number(fee || 0),
     };
-    const token = localStorage.getItem("token");
     setError("");
     setIsSubmitting(true);
     try {
@@ -334,7 +346,7 @@ export default function PortfolioPage() {
       const locale = code === "VND" ? "vi-VN" : "en-US";
       return new Intl.NumberFormat(locale, { style: "currency", currency: code, maximumFractionDigits: 2 }).format(value);
     } catch {
-      return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${code}`;
+      return `${formatNumber(value)} ${code}`;
     }
   };
 
@@ -365,7 +377,7 @@ export default function PortfolioPage() {
         aggregate.holdings += transaction.quantity;
         aggregate.buyCost += transactionValue;
 
-        const currentPrice = currentPrices[transaction.assetSymbol];
+        const currentPrice = currentPrices[normalizedSymbol];
         if (currentPrice) {
           const pnl = transaction.quantity * currentPrice - transactionValue;
           unrealizedPnlByTransaction.set(transaction.id, {
@@ -376,7 +388,14 @@ export default function PortfolioPage() {
         }
       } else if (side === "SELL") {
         totals.sell += transactionValue;
-        aggregate.holdings -= transaction.quantity;
+        if (aggregate.holdings > 0 && aggregate.buyCost > 0) {
+          const avgCost = aggregate.buyCost / aggregate.holdings;
+          const soldQty = Math.min(transaction.quantity, aggregate.holdings);
+          aggregate.holdings -= soldQty;
+          aggregate.buyCost = Math.max(0, aggregate.buyCost - soldQty * avgCost);
+        } else {
+          aggregate.holdings -= transaction.quantity;
+        }
         const realized = realizedPnlByTransaction.get(transaction.id);
         if (realized) {
           realizedByCurrency[currencyCode] = (realizedByCurrency[currencyCode] ?? 0) + realized.pnl;
@@ -394,8 +413,8 @@ export default function PortfolioPage() {
       const aggregate = aggregatesBySymbol.get(symbol.toUpperCase());
       if (!aggregate) continue;
       totalCostBasis += aggregate.buyCost;
-      if (aggregate.holdings > 0 && currentPrices[symbol]) {
-        totalMarketValue += aggregate.holdings * currentPrices[symbol];
+      if (aggregate.holdings > 0 && currentPrices[symbol.toUpperCase()]) {
+        totalMarketValue += aggregate.holdings * currentPrices[symbol.toUpperCase()];
       }
     }
 
@@ -414,30 +433,113 @@ export default function PortfolioPage() {
   }, [transactions, currentPrices, realizedPnlByTransaction]);
 
   useEffect(() => {
-    if (transactions.length === 0) return;
+    if (transactions.length === 0) {
+      setCurrentPrices({});
+      setPricesLoaded(true);
+      return;
+    }
     const controller = new AbortController();
-    const symbols = [...new Set(transactions.map(t => t.assetSymbol))];
-    symbols.forEach(async sym => {
-      try {
-        const res = await fetch(`/api/stock-price?symbol=${encodeURIComponent(getPriceSymbol(sym))}`, {
-          signal: controller.signal,
-        });
-        const d = await res.json();
-        if (!controller.signal.aborted && d.price) {
-          setCurrentPrices(prev => ({ ...prev, [sym]: d.price }));
+    const symbols = [...new Set(transactions.map(t => t.assetSymbol.toUpperCase()))];
+    setPricesLoaded(false);
+    Promise.all(
+      symbols.map(async (sym) => {
+        try {
+          const res = await fetch(`/api/stock-price?symbol=${encodeURIComponent(getPriceSymbol(sym))}`, {
+            signal: controller.signal,
+          });
+          const d = await res.json();
+          return [sym.toUpperCase(), Number.isFinite(d.price) && d.price > 0 ? d.price : null] as const;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            throw error;
+          }
+          return [sym.toUpperCase(), null] as const;
         }
-      } catch (error) {
+      }),
+    )
+      .then((entries) => {
+        if (!controller.signal.aborted) {
+          const nextPrices: Record<string, number> = {};
+          for (const [symbol, price] of entries) {
+            if (price != null) nextPrices[symbol] = price;
+          }
+          setCurrentPrices(nextPrices);
+          setPricesLoaded(true);
+        }
+      })
+      .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        // Keep the existing silent failure behavior for price lookups.
-      }
-    });
+        if (!controller.signal.aborted) {
+          setCurrentPrices({});
+          setPricesLoaded(true);
+        }
+      });
     return () => controller.abort();
   }, [transactions]);
-  
+
+  useEffect(() => {
+    if (transactions.length === 0) {
+      setCurrencyRates({ USD: 1, USDT: 1, USDC: 1 });
+      setCurrencyRatesLoaded(true);
+      return;
+    }
+    const controller = new AbortController();
+    const currencies = [...new Set(transactions.map(t => (t.currency || "USD").trim().toUpperCase()))];
+    setCurrencyRatesLoaded(false);
+
+    Promise.all(
+      currencies.map(async (currencyCode) => {
+        if (currencyCode === "USD" || currencyCode === "USDT" || currencyCode === "USDC") {
+          return [currencyCode, 1] as const;
+        }
+
+        try {
+          const res = await fetch(`/api/fx-rate?currency=${encodeURIComponent(currencyCode)}`, {
+            signal: controller.signal,
+          });
+          const data = await res.json();
+          const rate = Number(data.rate);
+          return [currencyCode, Number.isFinite(rate) && rate > 0 ? rate : 1] as const;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            throw error;
+          }
+          return [currencyCode, 1] as const;
+        }
+      }),
+    )
+      .then((entries) => {
+        if (!controller.signal.aborted) {
+          setCurrencyRates(Object.fromEntries(entries));
+          setCurrencyRatesLoaded(true);
+        }
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (!controller.signal.aborted) {
+          setCurrencyRates({ USD: 1, USDT: 1, USDC: 1 });
+          setCurrencyRatesLoaded(true);
+        }
+      });
+
+    return () => controller.abort();
+  }, [transactions]);
+
+  const requiredSymbols = useMemo(
+    () => [...new Set(transactions.map(t => t.assetSymbol.toUpperCase()))],
+    [transactions],
+  );
+
+  const chartDataReady = useMemo(() => {
+    if (transactions.length === 0) return true;
+    return pricesLoaded
+      && currencyRatesLoaded
+      && requiredSymbols.every((symbol) => symbol in currentPrices);
+  }, [transactions.length, pricesLoaded, currencyRatesLoaded, requiredSymbols, currentPrices]);
 
   function getSector(symbol: string) {
-  return sectors[symbol] ?? SECTOR_MAP[symbol.toUpperCase()] ?? SECTOR_MAP[symbol] ?? "Khác";
-}
+    return sectors[symbol] ?? SECTOR_MAP[symbol.toUpperCase()] ?? SECTOR_MAP[symbol] ?? "Khác";
+  }
 
   function renderTransactionPnl(transaction: Transaction) {
     const side = normalizeType(transaction.type);
@@ -446,7 +548,7 @@ export default function PortfolioPage() {
       if (!unrealized) return <span className="text-slate-600 text-xs">Đang tải...</span>;
       return (
         <span className={`font-semibold text-xs ${unrealized.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-          {unrealized.pnl >= 0 ? "▲" : "▼"} {unrealized.pnl >= 0 ? "+" : ""}{unrealized.pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })} ({unrealized.pnlPct.toFixed(1)}%)
+          {unrealized.pnl >= 0 ? "▲" : "▼"} {unrealized.pnl >= 0 ? "+" : ""}{formatNumber(unrealized.pnl)} ({formatPercent(unrealized.pnlPct)})
         </span>
       );
     }
@@ -458,7 +560,7 @@ export default function PortfolioPage() {
       return (
         <div className="text-right">
           <span className={`font-semibold text-xs ${isProfit ? "text-green-400" : "text-red-400"}`}>
-            {isProfit ? "▲ +" : "▼ "}{formatCurrencyValue(realized.pnl, transaction.currency)} ({realized.pnlPct.toFixed(1)}%)
+            {isProfit ? "▲ +" : "▼ "}{formatCurrencyValue(realized.pnl, transaction.currency)} ({formatPercent(realized.pnlPct)})
           </span>
           <p className="mt-1 text-[11px] text-slate-500">
             Giá vốn {formatCurrencyValue(realized.avgCost, transaction.currency)}
@@ -467,308 +569,273 @@ export default function PortfolioPage() {
       );
     }
 
-    // SWAP/STAKE và các loại khác chưa hỗ trợ tính P&L
-    return (
-      <span className="text-slate-500 text-[11px] leading-tight block text-right">
-        {"Chưa hỗ trợ tính P&L cho loại này"}
-      </span>
-    );
+    if (side === "SWAP" || side === "STAKE") {
+      return <span className="text-slate-500 text-xs">Chưa hỗ trợ tính P&L cho loại này</span>;
+    }
+
+    return null;
   }
 
   return (
-    <div className="app-shell flex">
-      <aside className="w-56 bg-slate-900 border-r border-slate-800 flex flex-col p-4 gap-2 fixed h-full">
-        <div className="mb-6 px-2">
-          <h1 className="text-lg font-bold text-white">💹 Investment</h1>
-          <p className="text-xs text-slate-500">Platform</p>
-        </div>
-        <button onClick={() => window.location.href = "/"} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-all">📊 Dashboard</button>
-        <button onClick={() => window.location.href = "/analysis"} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-all">🤖 AI Analysis</button>
-        <div className="mt-auto">
-          <button onClick={() => { localStorage.removeItem("token"); window.location.href = "/login"; }} className="w-full px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all text-left">🚪 Đăng xuất</button>
-        </div>
-      </aside>
+    <div className="min-h-screen text-slate-100 flex antigravity-volumetric">
 
-      <main className="ml-56 flex-1 p-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-3 mb-8">
-            <button onClick={() => window.location.href = "/"} className="text-slate-500 hover:text-white transition-colors">← Quay lại</button>
-            <div>
-              <p className="text-slate-500 text-sm">Portfolio</p>
-              <h2 className="text-2xl font-bold text-white">Giao dịch</h2>
-            </div>
-          </div>
+      <div className="flex flex-1 h-full overflow-hidden">
+      <main className="w-[800px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
 
-          <div className="grid gap-4 mb-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-slate-500 text-xs mb-1">Tổng giao dịch</p>
-              <p className="text-2xl font-bold text-blue-400">{portfolioSummary.transactionCount}</p>
+          {error && (
+            <div className="antigravity-panel p-4 text-sm text-red-400 border border-red-500/20 bg-red-500/5 backdrop-blur">
+              {error}
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-slate-500 text-xs mb-1">Chi phí mua</p>
-              <div className="text-2xl font-bold text-green-400 space-y-1">
-                {Object.entries(portfolioSummary.totalsByCurrency).length === 0 && <div>{formatCurrencyValue(0, "USD")}</div>}
-                {Object.entries(portfolioSummary.totalsByCurrency).map(([cur, value]) => (
-                  <div key={cur}>{formatCurrencyValue(value.buy, cur)}</div>
-                ))}
-              </div>
-              <p className="text-xs text-slate-500 mt-1">Tiền bôi ra</p>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-slate-500 text-xs mb-1">Tổng bán</p>
-              <div className="text-xl font-bold text-red-400 break-words leading-tight space-y-1">
-                {Object.entries(portfolioSummary.totalsByCurrency).length === 0 && <div>{formatCurrencyValue(0, "USD")}</div>}
-                {Object.entries(portfolioSummary.totalsByCurrency).map(([cur, value]) => (
-                  <div key={cur}>{formatCurrencyValue(value.sell, cur)}</div>
-                ))}
-              </div>
-              <div className="text-xs mt-2 font-semibold">
-                {Object.entries(portfolioSummary.realizedByCurrency).map(([cur, value]) => {
-                  const isProfit = value >= 0;
-                  return (
-                    <p key={cur} className={`${isProfit ? "text-green-400" : "text-red-400"}`}>
-                      Lãi đã chốt ({cur}): {isProfit ? "+" : ""}{formatCurrencyValue(value, cur)}
-                    </p>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-slate-500 text-xs mb-1">Giá trị hiện tại</p>
-              <p className="text-2xl font-bold text-cyan-400">{portfolioSummary.totalMarketValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
-              <p className="text-xs text-slate-500 mt-1">Cổ phiếu còn nắm</p>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-slate-500 text-xs mb-1">Lợi nhuận/Lỗ</p>
-              <p className={`text-2xl font-bold ${portfolioSummary.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {portfolioSummary.pnl >= 0 ? "▲ +" : "▼ "}{portfolioSummary.pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </p>
-              <p className={`text-xs mt-1 ${portfolioSummary.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>({portfolioSummary.pnlPct.toFixed(1)}%)</p>
-            </div>
-          </div>
+          )}
 
-          {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">{error}</div>}
-          <PortfolioChart transactions={transactions} currentPrices={currentPrices} />
+          <PortfolioChart
+            transactions={transactions}
+            currentPrices={currentPrices}
+            currencyRates={currencyRates}
+            dataReady={chartDataReady}
+          />
 
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold">Lịch sử giao dịch</h3>
-            <button onClick={() => showForm && !editingTx ? resetForm() : setShowForm(!showForm)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-colors">
-              {showForm ? "✕ Đóng" : "+ Thêm GD"}
-            </button>
-          </div>
+          <div className="antigravity-panel antigravity-float-slow overflow-hidden">
+            {/* Embedded Header Controls */}
+            <div className="flex flex-col border-b border-white/5 p-6 gap-4 bg-white/[0.01]">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-sm font-bold text-white tracking-widest uppercase">Lịch sử giao dịch</h2>
+                </div>
 
-          {showForm && (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-6">
-              <h4 className="font-semibold mb-4">{editingTx ? "✏️ Sửa giao dịch" : "Thêm giao dịch mới"}</h4>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="relative" ref={suggestRef}>
-                  <label className="text-xs text-slate-500 mb-1 block">Mã cổ phiếu *</label>
-                  <input value={symbol} onChange={e => handleSymbolChange(e.target.value)}
-                    onFocus={() => symbol && setShowSuggestions(true)}
-                    placeholder="VD: AAPL, GOOGL, VNM..."
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
-                  {showSuggestions && (suggestions.length > 0 || searchLoading) && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 overflow-hidden">
-                      {searchLoading && <div className="px-3 py-2 text-xs text-slate-500">Đang tìm...</div>}
-                      {suggestions.map(s => (
-                        <button key={s.symbol} onMouseDown={() => selectSuggestion(s)}
-                          className="w-full px-3 py-2.5 text-left hover:bg-slate-700 transition-colors flex justify-between items-center">
-                          <div>
-                            <span className="font-semibold text-white text-sm">{s.symbol}</span>
-                            <span className="text-slate-400 text-xs ml-2">{s.name}</span>
-                          </div>
-                          <span className="text-xs text-slate-500 bg-slate-700 px-1.5 py-0.5 rounded">{s.type}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Tên công ty</label>
-                  <input value={assetName} onChange={e => setAssetName(e.target.value)} placeholder="Tự điền hoặc chọn từ gợi ý"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Loại *</label>
-                  <select value={type} onChange={e => setType(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
-                    <option value="BUY">🟢 MUA</option>
-                    <option value="SELL">🔴 BÁN</option>
-                    <option value="SWAP">🔄 SWAP - Hoán đổi</option>
-                    <option value="STAKE">💎 STAKE - Đặt cọc</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Tiền tệ</label>
-                  <select value={currency} onChange={e => setCurrency(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
-                    <option value="USD">USD - Đô la Mỹ</option>
-                    <option value="VND">VND - Việt Nam Đồng</option>
-                    <option value="USDT">USDT - Tether</option>
-                    <option value="BTC">BTC - Bitcoin</option>
-                    <option value="ETH">ETH - Ethereum</option>
-                    <option value="EUR">EUR - Euro</option>
-                  </select>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => {
+                    if (transactions.length === 0) return;
+                    const headers = ["Loại", "Mã tài sản", "Tên tài sản", "Ngày", "Số lượng", "Giá", "Tiền tệ", "Tổng tiền", "Ghi chú"];
+                    const rows = transactions.map(t => [
+                      normalizeType(t.type) === "BUY" ? "MUA" : normalizeType(t.type) === "SELL" ? "BÁN" : t.type,
+                      t.assetSymbol,
+                      t.assetName || "",
+                      t.transactionDate?.slice(0, 10) || "",
+                      t.quantity,
+                      t.price,
+                      t.currency,
+                      t.quantity * t.price,
+                      t.notes || ""
+                    ]);
+                    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+                    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", `transaction_history_${id}.csv`);
+                    link.style.visibility = "hidden";
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }} disabled={transactions.length === 0} className="antigravity-btn px-4 py-1.5 text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    📥 Xuất CSV
+                  </button>
+                  <button onClick={() => showForm && !editingTx ? resetForm() : setShowForm(!showForm)}
+                    className="antigravity-btn px-4 py-1.5 text-xs font-bold transition-all">
+                    {showForm ? "✕ Đóng" : "+ Thêm GD"}
+                  </button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Số lượng *</label>
-                  <input type="number" min="0" max={normalizeType(type) === "SELL" && symbol ? getAvailableToSell(symbol) : undefined} value={quantity} onChange={e => handleQuantityChange(e.target.value)} placeholder="10"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
-                  {normalizeType(type) === "SELL" && symbol && (
-                    <p className="mt-1 text-xs text-slate-400">
-                      Có thể bán tối đa: <span className="font-semibold text-yellow-400">{getAvailableToSell(symbol).toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Giá * <span className="text-blue-400">(tự động điền khi chọn mã)</span></label>
-                  <input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="150.00"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
-                </div>
-              </div>
-                {normalizeType(type) === "SWAP" && (
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Mã đích (to) *</label>
-                      <input value={swapTargetSymbol} onChange={e => setSwapTargetSymbol(e.target.value.toUpperCase())} placeholder="VD: MSFT"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Số lượng đích *</label>
-                      <input type="number" value={swapTargetQuantity} onChange={e => setSwapTargetQuantity(e.target.value)} placeholder="10"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Giá đích *</label>
-                      <input type="number" value={swapTargetPrice} onChange={e => setSwapTargetPrice(e.target.value)} placeholder="150.00"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
-                    </div>
+            </div>
+
+            {/* Form Section inside Table Card */}
+            {showForm && (
+              <div className="border-b border-white/5 p-6 bg-white/[0.01]">
+                <h4 className="font-bold text-xs uppercase tracking-wider text-white mb-4">{editingTx ? "✏️ Sửa giao dịch" : "Thêm giao dịch mới"}</h4>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="relative" ref={suggestRef}>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">Mã cổ phiếu *</label>
+                    <input value={symbol} onChange={e => handleSymbolChange(e.target.value)}
+                      onFocus={() => symbol && setShowSuggestions(true)}
+                      placeholder="VD: AAPL, GOOGL, VNM..."
+                      className="w-full antigravity-input rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none" />
+                    {showSuggestions && (suggestions.length > 0 || searchLoading) && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-[#0b0c10] border border-white/5 rounded-lg shadow-xl z-50 overflow-hidden">
+                        {searchLoading && <div className="px-3 py-2 text-xs text-slate-500">Đang tìm...</div>}
+                        {suggestions.map(s => (
+                          <button key={s.symbol} onMouseDown={() => selectSuggestion(s)}
+                            className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors flex justify-between items-center">
+                            <div>
+                              <span className="font-semibold text-white text-xs">{s.symbol}</span>
+                              <span className="text-slate-400 text-[10px] ml-2">{s.name}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">{s.type}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Ngày giao dịch</label>
-                  <input type="date" required value={date} onChange={e => handleDateChange(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none" />
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">Tên công ty</label>
+                    <input value={assetName} onChange={e => setAssetName(e.target.value)} placeholder="Tự điền hoặc chọn từ gợi ý"
+                      className="w-full antigravity-input rounded-lg px-3 py-2 text-xs text-white focus:outline-none" />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Ghi chú</label>
-                  <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Tuỳ chọn..."
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">Loại *</label>
+                    <select value={type} onChange={e => setType(e.target.value)}
+                      className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none">
+                      <option value="BUY">🟢 MUA</option>
+                      <option value="SELL">🔴 BÁN</option>
+                      <option value="SWAP">🔄 SWAP - Hoán đổi</option>
+                      <option value="STAKE">💎 STAKE - Đặt cọc</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">Tiền tệ</label>
+                    <select value={currency} onChange={e => setCurrency(e.target.value)}
+                      className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none">
+                      <option value="USD">USD</option>
+                      <option value="VND">VND</option>
+                      <option value="USDT">USDT</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
-              {editingTx && currentPrice && (
-                 <div className="mb-3 p-3 bg-slate-800 rounded-lg text-sm flex justify-between items-center">
-                     <span className="text-slate-400">Giá vào ngày {date}: <span className="text-white font-semibold">{formatCurrencyValue(currentPrice, currency)}</span></span>
-                     <span className={Number(price) > currentPrice ? "text-red-400" : Number(price) < currentPrice ? "text-green-400" : "text-slate-400"}>
-                     {Number(price) > currentPrice
-                     ? `↑ Cao hơn ${formatCurrencyValue(Number(price) - currentPrice, currency)} (+${(((Number(price) - currentPrice) / currentPrice) * 100).toFixed(1)}%)`
-                     : Number(price) < currentPrice
-                     ? `↓ Thấp hơn ${formatCurrencyValue(currentPrice - Number(price), currency)} (-${(((currentPrice - Number(price)) / currentPrice) * 100).toFixed(1)}%)`
-                      : "Bằng giá hiện tại"}
-                     </span>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">Số lượng *</label>
+                    <input type="number" min="0" max={normalizeType(type) === "SELL" && symbol ? getAvailableToSell(symbol) : undefined} value={quantity} onChange={e => handleQuantityChange(e.target.value)} placeholder="10"
+                      className="w-full antigravity-input rounded-lg px-3 py-2 text-xs text-white focus:outline-none" />
+                    {normalizeType(type) === "SELL" && symbol && (
+                      <p className="mt-1 text-[10px] text-slate-400">
+                        Có thể bán tối đa: <span className="font-semibold text-yellow-400">{formatNumber(getAvailableToSell(symbol))}</span>
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">Giá *</label>
+                    <input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="150.00"
+                      className="w-full antigravity-input rounded-lg px-3 py-2 text-xs text-white focus:outline-none" />
+                    {currentPrice !== null && Number(price) > 0 && (
+                      <p className="mt-1 text-[10px] text-slate-450 leading-tight">
+                        Giá hiện tại: <span className="text-white font-semibold">${formatNumber(currentPrice)}</span>{" "}
+                        <span className={currentPrice >= Number(price) ? "text-emerald-450 font-bold" : "text-red-450 font-bold"}>
+                          ({currentPrice >= Number(price) ? "Tăng +" : "Giảm "}{formatPercent(((currentPrice - Number(price)) / Number(price)) * 100)} so với GD)
+                        </span>
+                      </p>
+                    )}
+                  </div>
                 </div>
-               )}
-              {quantity && price && (
-                <div className="mb-4 p-3 bg-slate-800 rounded-lg text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Tổng tiền: </span>
-                    <span className={`font-semibold ${type === "BUY" ? "text-red-400" : "text-green-400"}`}>
-                      {type === "BUY" ? "-" : "+"}{formatCurrencyValue(Number(quantity) * Number(price), currency)}
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">Ngày giao dịch</label>
+                    <input type="date" required value={date} onChange={e => handleDateChange(e.target.value)}
+                      className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">Phí giao dịch</label>
+                    <input type="number" min="0" value={fee} onChange={e => setFee(e.target.value)} placeholder="0.00"
+                      className="w-full antigravity-input rounded-lg px-3 py-2 text-xs text-white focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">Ghi chú</label>
+                    <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Tuỳ chọn..."
+                      className="w-full antigravity-input rounded-lg px-3 py-2 text-xs text-white focus:outline-none" />
+                  </div>
+                </div>
+                {Number(quantity) > 0 && Number(price) > 0 && (
+                  <div className="mb-4 p-3 bg-white/[0.02] border border-white/5 rounded-lg flex justify-between items-center text-xs font-bold text-slate-450">
+                    <span>TỔNG GIÁ TRỊ GIAO DỊCH:</span>
+                    <span className="text-white text-sm">
+                      {currency}{" "}
+                      {(() => {
+                        const q = Number(quantity || 0);
+                        const p = Number(price || 0);
+                        const f = Number(fee || 0);
+                        const total = normalizeType(type) === "BUY" ? (q * p) + f : (q * p) - f;
+                        return formatNumber(total);
+                      })()}
                     </span>
                   </div>
-                  {type === "SELL" && (
-                    <div className="flex justify-between mt-2 pt-2 border-t border-slate-700">
-                      <span className="text-slate-400">Số lượng còn lại: </span>
-                      <span className="text-yellow-400 font-semibold">{Math.max(0, getAvailableToSell(symbol) - Number(quantity)).toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
-                    </div>
+                )}
+                <div className="flex gap-3">
+                  <button onClick={handleSubmit} disabled={isSubmitting} className="flex-grow py-2 bg-white/10 hover:bg-white/20 border border-white/10 text-white font-semibold text-xs rounded-lg transition-colors">
+                    {isSubmitting ? "Đang lưu..." : editingTx ? "✓ Lưu thay đổi" : "✓ Xác nhận giao dịch"}
+                  </button>
+                  {editingTx && (
+                    <button onClick={resetForm} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg transition-colors">Hủy</button>
                   )}
                 </div>
-              )}
-              <div className="flex gap-3">
-                <button onClick={handleSubmit} disabled={isSubmitting} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60 text-white font-semibold rounded-lg transition-colors">
-                  {isSubmitting ? "Đang lưu..." : editingTx ? "✓ Lưu thay đổi" : "✓ Xác nhận giao dịch"}
-                </button>
-                {editingTx && (
-                  <button onClick={resetForm} className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors">Hủy</button>
-                )}
               </div>
-            </div>
-          )}
+            )}
 
-          {transactions.length === 0 && !showForm && (
-            <div className="text-center py-12 text-slate-500">
-              <p className="text-4xl mb-3">📭</p>
-              <p>Chưa có giao dịch nào. Nhấn "+ Thêm GD" để bắt đầu!</p>
+            {/* Table Content */}
+            <div className="p-6">
+              {transactions.length === 0 && !showForm ? (
+                <div className="text-center py-12 text-slate-550">
+                  <p className="text-sm">Chưa có giao dịch nào. Nhấn "+ Thêm GD" để bắt đầu!</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/5">
+                        <th className="text-left px-4 py-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Loại</th>
+                        <th className="text-left px-4 py-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Mã</th>
+                        <th className="text-left px-4 py-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Công ty</th>
+                        <th className="text-left px-4 py-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Ngày</th>
+                        <th className="text-right px-4 py-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Số lượng</th>
+                        <th className="text-right px-4 py-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Giá</th>
+                        <th className="text-right px-4 py-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Tổng tiền</th>
+                        <th className="text-right px-4 py-3 text-slate-400 font-bold text-xs uppercase tracking-wider">P&L</th>
+                        <th className="text-center px-4 py-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Hành động</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {transactions.map(t => (
+                        <tr key={t.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                          {deleteConfirm === t.id ? (
+                            <td colSpan={9} className="px-4 py-4">
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs text-red-400 font-bold">Xóa giao dịch này?</p>
+                                <div className="flex gap-2">
+                                  <button onClick={() => handleDelete(t.id)} className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs font-bold rounded transition-colors">Xóa</button>
+                                  <button onClick={() => setDeleteConfirm(null)} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded transition-colors">Hủy</button>
+                                </div>
+                              </div>
+                            </td>
+                          ) : (
+                            <>
+                              <td className="px-4 py-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${normalizeType(t.type) === "BUY" ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
+                                  {normalizeType(t.type) === "BUY" ? "MUA" : "BÁN"}
+                                </span>
+                              </td>
+                              <td className="px-4 py-4 font-semibold text-white">{t.assetSymbol}</td>
+                              <td className="px-4 py-4 text-slate-300 text-xs">{t.assetName}</td>
+                              <td className="px-4 py-4 text-slate-400 text-xs">{t.transactionDate?.slice(0,10)}</td>
+                              <td className="px-4 py-4 text-right text-white">{formatNumber(t.quantity)}</td>
+                              <td className="px-4 py-4 text-right text-white">{formatCurrencyValue(t.price, t.currency)}</td>
+                              <td className={`px-4 py-4 text-right font-semibold ${normalizeType(t.type) === "BUY" ? "text-red-400" : "text-green-400"}`}>
+                                {normalizeType(t.type) === "BUY" ? "-" : "+"}{formatCurrencyValue(t.quantity * t.price, t.currency)}
+                              </td>
+                              <td className="px-4 py-4 text-right">
+                                {renderTransactionPnl(t)}
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="flex gap-2 justify-center">
+                                  <button onClick={() => openEdit(t)} className="p-1 rounded text-slate-450 hover:text-white transition-colors">✏️</button>
+                                  <button onClick={() => setDeleteConfirm(t.id)} className="p-1 rounded text-slate-450 hover:text-red-400 transition-colors">🗑️</button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800">
-                  <th className="text-left px-4 py-3 text-slate-400 font-semibold text-xs">Loại</th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-semibold text-xs">Mã</th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-semibold text-xs">Công ty</th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-semibold text-xs">Ngày</th>
-                  <th className="text-right px-4 py-3 text-slate-400 font-semibold text-xs">Số lượng</th>
-                  <th className="text-right px-4 py-3 text-slate-400 font-semibold text-xs">Giá</th>
-                  <th className="text-right px-4 py-3 text-slate-400 font-semibold text-xs">Tổng tiền</th>
-                  <th className="text-right px-4 py-3 text-slate-400 font-semibold text-xs">P&L</th>
-                  <th className="text-right px-4 py-3 text-slate-400 font-semibold text-xs">Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map(t => (
-                  <tr key={t.id} className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors">
-                    {deleteConfirm === t.id ? (
-                      <td colSpan={9} className="px-4 py-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm text-red-400">Xóa giao dịch này?</p>
-                          <div className="flex gap-2">
-                            <button onClick={() => handleDelete(t.id)} className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold rounded transition-colors">Xóa</button>
-                            <button onClick={() => setDeleteConfirm(null)} className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold rounded transition-colors">Hủy</button>
-                          </div>
-                        </div>
-                      </td>
-                    ) : (
-                      <>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${normalizeType(t.type) === "BUY" ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
-                            {normalizeType(t.type) === "BUY" ? "🟢 MUA" : "🔴 BÁN"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-white">{t.assetSymbol}</td>
-                        <td className="px-4 py-3 text-slate-300 text-xs">{t.assetName}</td>
-                        <td className="px-4 py-3 text-slate-400 text-xs">{t.transactionDate?.slice(0,10)}</td>
-                        <td className="px-4 py-3 min-w-[150px] whitespace-nowrap text-right font-mono tabular-nums text-white" title={String(t.quantity)}>{formatQuantity(t.quantity)}</td>
-                        <td className="px-4 py-3 text-right text-white">{formatCurrencyValue(t.price, t.currency)}</td>
-                        <td className={`px-4 py-3 text-right font-semibold ${normalizeType(t.type) === "BUY" ? "text-red-400" : "text-green-400"}`}>
-                          {normalizeType(t.type) === "BUY" ? "-" : "+"}{formatCurrencyValue(t.quantity * t.price, t.currency)}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {renderTransactionPnl(t)}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex gap-2 justify-center">
-                            <button onClick={() => openEdit(t)} className="p-1 rounded text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition-colors">✏️</button>
-                            <button onClick={() => setDeleteConfirm(t.id)} className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors">🗑️</button>
-                          </div>
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
-        </div>
-      </main>
+
+        </main>
+      <div className="flex-1 h-full overflow-y-auto p-6 bg-transparent border-l border-white/5">
+        <PortfolioOverviewPanel portfolioId={id as string} />
+      </div>
+    </div>
     </div>
   );
 }

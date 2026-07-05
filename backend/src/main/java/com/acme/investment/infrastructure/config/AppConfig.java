@@ -4,5 +4,5 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({NewsProperties.class, OpenAiProperties.class})
+@EnableConfigurationProperties({NewsProperties.class, OpenAiProperties.class, JournalAttachmentStorageProperties.class})
 public class AppConfig {}

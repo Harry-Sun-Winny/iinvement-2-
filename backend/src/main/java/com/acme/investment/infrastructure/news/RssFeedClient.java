@@ -36,6 +36,7 @@ public class RssFeedClient {
         return items;
     }
 
+    @SuppressWarnings("deprecation")
     private List<RawNewsItem> fetchFeed(String source, String url) throws Exception {
         SyndFeedInput input = new SyndFeedInput();
         SyndFeed syndFeed = input.build(new XmlReader(URI.create(url).toURL()));

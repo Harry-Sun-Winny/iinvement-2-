@@ -61,13 +61,13 @@ export function useCalendar() {
   const [sortKey, setSortKey] = useState<CalendarSortKey>("time");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [page, setPage] = useState(1);
-  const window = useMemo(() => getWindow(range, customFrom, customTo), [customFrom, customTo, range]);
+  const dateWindow = useMemo(() => getWindow(range, customFrom, customTo), [customFrom, customTo, range]);
 
   const loadEvents = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError("");
     try {
-      const response = await getMarketCalendar(category, window, signal);
+      const response = await getMarketCalendar(category, dateWindow, signal);
       setEvents(response.events);
       setSource(response.source);
       setUpdatedAt(response.updatedAt);
@@ -76,7 +76,7 @@ export function useCalendar() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [category, window]);
+  }, [category, dateWindow]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,11 +87,11 @@ export function useCalendar() {
   useEffect(() => {
     const controller = new AbortController();
     const categories: CalendarCategory[] = ["economic", "earnings", "dividends", "ipo"];
-    Promise.all(categories.map(item => getMarketCalendar(item, window, controller.signal)))
+    Promise.all(categories.map(item => getMarketCalendar(item, dateWindow, controller.signal)))
       .then(results => setSummary({ economic: results[0].events.length, earnings: results[1].events.length, dividends: results[2].events.length, ipo: results[3].events.length }))
       .catch(() => undefined);
     return () => controller.abort();
-  }, [window]);
+  }, [dateWindow]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !localStorage.getItem("token")) return;
@@ -153,6 +153,6 @@ export function useCalendar() {
     events, filteredEvents, paginatedEvents, summary, source, updatedAt, loading, error,
     search, setSearch, filters, updateFilter, resetFilters: () => setFilters(emptyFilters), options,
     sortKey, sortDirection, toggleSort, page, setPage, pageCount, marketHeat, watchlistEvents,
-    refresh: () => void loadEvents(), window,
+    refresh: () => void loadEvents(), window: dateWindow,
   };
 }

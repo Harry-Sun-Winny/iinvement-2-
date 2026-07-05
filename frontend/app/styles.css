@@ -1,8 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@property --tw-animation-delay{syntax:"*";inherits:false;initial-value:0s}@property --tw-animation-direction{syntax:"*";inherits:false;initial-value:normal}@property --tw-animation-duration{syntax:"*";inherits:false}@property --tw-animation-fill-mode{syntax:"*";inherits:false;initial-value:none}@property --tw-animation-iteration-count{syntax:"*";inherits:false;initial-value:1}@property --tw-enter-blur{syntax:"*";inherits:false;initial-value:0}@property --tw-enter-opacity{syntax:"*";inherits:false;initial-value:1}@property --tw-enter-rotate{syntax:"*";inherits:false;initial-value:0}@property --tw-enter-scale{syntax:"*";inherits:false;initial-value:1}@property --tw-enter-translate-x{syntax:"*";inherits:false;initial-value:0}@property --tw-enter-translate-y{syntax:"*";inherits:false;initial-value:0}@property --tw-exit-blur{syntax:"*";inherits:false;initial-value:0}@property --tw-exit-opacity{syntax:"*";inherits:false;initial-value:1}@property --tw-exit-rotate{syntax:"*";inherits:false;initial-value:0}@property --tw-exit-scale{syntax:"*";inherits:false;initial-value:1}@property --tw-exit-translate-x{syntax:"*";inherits:false;initial-value:0}@property --tw-exit-translate-y{syntax:"*";inherits:false;initial-value:0}@theme inline{--animation-delay-0: 0s; --animation-delay-75: 75ms; --animation-delay-100: .1s; --animation-delay-150: .15s; --animation-delay-200: .2s; --animation-delay-300: .3s; --animation-delay-500: .5s; --animation-delay-700: .7s; --animation-delay-1000: 1s; --animation-repeat-0: 0; --animation-repeat-1: 1; --animation-repeat-infinite: infinite; --animation-direction-normal: normal; --animation-direction-reverse: reverse; --animation-direction-alternate: alternate; --animation-direction-alternate-reverse: alternate-reverse; --animation-fill-mode-none: none; --animation-fill-mode-forwards: forwards; --animation-fill-mode-backwards: backwards; --animation-fill-mode-both: both; --percentage-0: 0; --percentage-5: .05; --percentage-10: .1; --percentage-15: .15; --percentage-20: .2; --percentage-25: .25; --percentage-30: .3; --percentage-35: .35; --percentage-40: .4; --percentage-45: .45; --percentage-50: .5; --percentage-55: .55; --percentage-60: .6; --percentage-65: .65; --percentage-70: .7; --percentage-75: .75; --percentage-80: .8; --percentage-85: .85; --percentage-90: .9; --percentage-95: .95; --percentage-100: 1; --percentage-translate-full: 1; --animate-in: enter var(--tw-animation-duration,var(--tw-duration,.15s))var(--tw-ease,ease)var(--tw-animation-delay,0s)var(--tw-animation-iteration-count,1)var(--tw-animation-direction,normal)var(--tw-animation-fill-mode,none); --animate-out: exit var(--tw-animation-duration,var(--tw-duration,.15s))var(--tw-ease,ease)var(--tw-animation-delay,0s)var(--tw-animation-iteration-count,1)var(--tw-animation-direction,normal)var(--tw-animation-fill-mode,none); @keyframes enter { from { opacity: var(--tw-enter-opacity,1); transform: translate3d(var(--tw-enter-translate-x,0),var(--tw-enter-translate-y,0),0)scale3d(var(--tw-enter-scale,1),var(--tw-enter-scale,1),var(--tw-enter-scale,1))rotate(var(--tw-enter-rotate,0)); filter: blur(var(--tw-enter-blur,0)); }}@keyframes exit { to { opacity: var(--tw-exit-opacity,1); transform: translate3d(var(--tw-exit-translate-x,0),var(--tw-exit-translate-y,0),0)scale3d(var(--tw-exit-scale,1),var(--tw-exit-scale,1),var(--tw-exit-scale,1))rotate(var(--tw-exit-rotate,0)); filter: blur(var(--tw-exit-blur,0)); }}--animate-accordion-down: accordion-down var(--tw-animation-duration,var(--tw-duration,.2s))var(--tw-ease,ease-out)var(--tw-animation-delay,0s)var(--tw-animation-iteration-count,1)var(--tw-animation-direction,normal)var(--tw-animation-fill-mode,none); --animate-accordion-up: accordion-up var(--tw-animation-duration,var(--tw-duration,.2s))var(--tw-ease,ease-out)var(--tw-animation-delay,0s)var(--tw-animation-iteration-count,1)var(--tw-animation-direction,normal)var(--tw-animation-fill-mode,none); --animate-collapsible-down: collapsible-down var(--tw-animation-duration,var(--tw-duration,.2s))var(--tw-ease,ease-out)var(--tw-animation-delay,0s)var(--tw-animation-iteration-count,1)var(--tw-animation-direction,normal)var(--tw-animation-fill-mode,none); --animate-collapsible-up: collapsible-up var(--tw-animation-duration,var(--tw-duration,.2s))var(--tw-ease,ease-out)var(--tw-animation-delay,0s)var(--tw-animation-iteration-count,1)var(--tw-animation-direction,normal)var(--tw-animation-fill-mode,none); @keyframes accordion-down { from { height: 0; }to { height: var(--radix-accordion-content-height,var(--bits-accordion-content-height,var(--reka-accordion-content-height,var(--kb-accordion-content-height,var(--ngp-accordion-content-height,auto))))); }}@keyframes accordion-up { from { height: var(--radix-accordion-content-height,var(--bits-accordion-content-height,var(--reka-accordion-content-height,var(--kb-accordion-content-height,var(--ngp-accordion-content-height,auto))))); }to { height: 0; }}@keyframes collapsible-down { from { height: 0; }to { height: var(--radix-collapsible-content-height,var(--bits-collapsible-content-height,var(--reka-collapsible-content-height,var(--kb-collapsible-content-height,auto)))); }}@keyframes collapsible-up { from { height: var(--radix-collapsible-content-height,var(--bits-collapsible-content-height,var(--reka-collapsible-content-height,var(--kb-collapsible-content-height,auto)))); }to { height: 0; }}--animate-caret-blink: caret-blink 1.25s ease-out infinite; @keyframes caret-blink { 0%,70%,100% { opacity: 1; }20%,50% { opacity: 0; }}}@utility animation-duration-*{--tw-animation-duration: calc(--value(number)*1ms); --tw-animation-duration: --value(--animation-duration-*,[duration],"initial",[*]); animation-duration: calc(--value(number)*1ms); animation-duration: --value(--animation-duration-*,[duration],"initial",[*]);}@utility delay-*{animation-delay: calc(--value(number)*1ms); animation-delay: --value(--animation-delay-*,[duration],"initial",[*]); --tw-animation-delay: calc(--value(number)*1ms); --tw-animation-delay: --value(--animation-delay-*,[duration],"initial",[*]);}@utility repeat-*{animation-iteration-count: --value(--animation-repeat-*,number,"initial",[*]); --tw-animation-iteration-count: --value(--animation-repeat-*,number,"initial",[*]);}@utility direction-*{animation-direction: --value(--animation-direction-*,"initial",[*]); --tw-animation-direction: --value(--animation-direction-*,"initial",[*]);}@utility fill-mode-*{animation-fill-mode: --value(--animation-fill-mode-*,"initial",[*]); --tw-animation-fill-mode: --value(--animation-fill-mode-*,"initial",[*]);}@utility running{animation-play-state: running;}@utility paused{animation-play-state: paused;}@utility play-state-*{animation-play-state: --value("initial",[*]);}@utility blur-in{--tw-enter-blur: 20px;}@utility blur-in-*{--tw-enter-blur: calc(--value(number)*1px); --tw-enter-blur: --value(--blur-*,[*]);}@utility blur-out{--tw-exit-blur: 20px;}@utility blur-out-*{--tw-exit-blur: calc(--value(number)*1px); --tw-exit-blur: --value(--blur-*,[*]);}@utility fade-in{--tw-enter-opacity: 0;}@utility fade-in-*{--tw-enter-opacity: calc(--value(number)/100); --tw-enter-opacity: --value(--percentage-*,[*]);}@utility fade-out{--tw-exit-opacity: 0;}@utility fade-out-*{--tw-exit-opacity: calc(--value(number)/100); --tw-exit-opacity: --value(--percentage-*,[*]);}@utility zoom-in{--tw-enter-scale: 0;}@utility zoom-in-*{--tw-enter-scale: calc(--value(number)*1%); --tw-enter-scale: calc(--value(ratio)); --tw-enter-scale: --value(--percentage-*,[*]);}@utility -zoom-in-*{--tw-enter-scale: calc(--value(number)*-1%); --tw-enter-scale: calc(--value(ratio)*-1); --tw-enter-scale: --value(--percentage-*,[*]);}@utility zoom-out{--tw-exit-scale: 0;}@utility zoom-out-*{--tw-exit-scale: calc(--value(number)*1%); --tw-exit-scale: calc(--value(ratio)); --tw-exit-scale: --value(--percentage-*,[*]);}@utility -zoom-out-*{--tw-exit-scale: calc(--value(number)*-1%); --tw-exit-scale: calc(--value(ratio)*-1); --tw-exit-scale: --value(--percentage-*,[*]);}@utility spin-in{--tw-enter-rotate: 30deg;}@utility spin-in-*{--tw-enter-rotate: calc(--value(number)*1deg); --tw-enter-rotate: calc(--value(ratio)*360deg); --tw-enter-rotate: --value(--rotate-*,[*]);}@utility -spin-in{--tw-enter-rotate: -30deg;}@utility -spin-in-*{--tw-enter-rotate: calc(--value(number)*-1deg); --tw-enter-rotate: calc(--value(ratio)*-360deg); --tw-enter-rotate: --value(--rotate-*,[*]);}@utility spin-out{--tw-exit-rotate: 30deg;}@utility spin-out-*{--tw-exit-rotate: calc(--value(number)*1deg); --tw-exit-rotate: calc(--value(ratio)*360deg); --tw-exit-rotate: --value(--rotate-*,[*]);}@utility -spin-out{--tw-exit-rotate: -30deg;}@utility -spin-out-*{--tw-exit-rotate: calc(--value(number)*-1deg); --tw-exit-rotate: calc(--value(ratio)*-360deg); --tw-exit-rotate: --value(--rotate-*,[*]);}@utility slide-in-from-top{--tw-enter-translate-y: -100%;}@utility slide-in-from-top-*{--tw-enter-translate-y: calc(--value(integer)*var(--spacing)*-1); --tw-enter-translate-y: calc(--value(--percentage-*,--percentage-translate-*)*-100%); --tw-enter-translate-y: calc(--value(ratio)*-100%); --tw-enter-translate-y: calc(--value(--translate-*,[percentage],[length])*-1);}@utility slide-in-from-bottom{--tw-enter-translate-y: 100%;}@utility slide-in-from-bottom-*{--tw-enter-translate-y: calc(--value(integer)*var(--spacing)); --tw-enter-translate-y: calc(--value(--percentage-*,--percentage-translate-*)*100%); --tw-enter-translate-y: calc(--value(ratio)*100%); --tw-enter-translate-y: --value(--translate-*,[percentage],[length]);}@utility slide-in-from-left{--tw-enter-translate-x: -100%;}@utility slide-in-from-left-*{--tw-enter-translate-x: calc(--value(integer)*var(--spacing)*-1); --tw-enter-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*-100%); --tw-enter-translate-x: calc(--value(ratio)*-100%); --tw-enter-translate-x: calc(--value(--translate-*,[percentage],[length])*-1);}@utility slide-in-from-right{--tw-enter-translate-x: 100%;}@utility slide-in-from-right-*{--tw-enter-translate-x: calc(--value(integer)*var(--spacing)); --tw-enter-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*100%); --tw-enter-translate-x: calc(--value(ratio)*100%); --tw-enter-translate-x: --value(--translate-*,[percentage],[length]);}@utility slide-in-from-start{&:dir(ltr){ --tw-enter-translate-x: -100%; }&:dir(rtl){ --tw-enter-translate-x: 100%; }}@utility slide-in-from-start-*{&:where(:dir(ltr),[dir="ltr"],[dir="ltr"]*){ --tw-enter-translate-x: calc(--value(integer)*var(--spacing)*-1); --tw-enter-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*-100%); --tw-enter-translate-x: calc(--value(ratio)*-100%); --tw-enter-translate-x: calc(--value(--translate-*,[percentage],[length])*-1); }&:where(:dir(rtl),[dir="rtl"],[dir="rtl"]*){ --tw-enter-translate-x: calc(--value(integer)*var(--spacing)); --tw-enter-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*100%); --tw-enter-translate-x: calc(--value(ratio)*100%); --tw-enter-translate-x: --value(--translate-*,[percentage],[length]); }}@utility slide-in-from-end{&:dir(ltr){ --tw-enter-translate-x: 100%; }&:dir(rtl){ --tw-enter-translate-x: -100%; }}@utility slide-in-from-end-*{&:where(:dir(ltr),[dir="ltr"],[dir="ltr"]*){ --tw-enter-translate-x: calc(--value(integer)*var(--spacing)); --tw-enter-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*100%); --tw-enter-translate-x: calc(--value(ratio)*100%); --tw-enter-translate-x: --value(--translate-*,[percentage],[length]); }&:where(:dir(rtl),[dir="rtl"],[dir="rtl"]*){ --tw-enter-translate-x: calc(--value(integer)*var(--spacing)*-1); --tw-enter-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*-100%); --tw-enter-translate-x: calc(--value(ratio)*-100%); --tw-enter-translate-x: calc(--value(--translate-*,[percentage],[length])*-1); }}@utility slide-out-to-top{--tw-exit-translate-y: -100%;}@utility slide-out-to-top-*{--tw-exit-translate-y: calc(--value(integer)*var(--spacing)*-1); --tw-exit-translate-y: calc(--value(--percentage-*,--percentage-translate-*)*-100%); --tw-exit-translate-y: calc(--value(ratio)*-100%); --tw-exit-translate-y: calc(--value(--translate-*,[percentage],[length])*-1);}@utility slide-out-to-bottom{--tw-exit-translate-y: 100%;}@utility slide-out-to-bottom-*{--tw-exit-translate-y: calc(--value(integer)*var(--spacing)); --tw-exit-translate-y: calc(--value(--percentage-*,--percentage-translate-*)*100%); --tw-exit-translate-y: calc(--value(ratio)*100%); --tw-exit-translate-y: --value(--translate-*,[percentage],[length]);}@utility slide-out-to-left{--tw-exit-translate-x: -100%;}@utility slide-out-to-left-*{--tw-exit-translate-x: calc(--value(integer)*var(--spacing)*-1); --tw-exit-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*-100%); --tw-exit-translate-x: calc(--value(ratio)*-100%); --tw-exit-translate-x: calc(--value(--translate-*,[percentage],[length])*-1);}@utility slide-out-to-right{--tw-exit-translate-x: 100%;}@utility slide-out-to-right-*{--tw-exit-translate-x: calc(--value(integer)*var(--spacing)); --tw-exit-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*100%); --tw-exit-translate-x: calc(--value(ratio)*100%); --tw-exit-translate-x: --value(--translate-*,[percentage],[length]);}@utility slide-out-to-start{&:dir(ltr){ --tw-exit-translate-x: -100%; }&:dir(rtl){ --tw-exit-translate-x: 100%; }}@utility slide-out-to-start-*{&:where(:dir(ltr),[dir="ltr"],[dir="ltr"]*){ --tw-exit-translate-x: calc(--value(integer)*var(--spacing)*-1); --tw-exit-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*-100%); --tw-exit-translate-x: calc(--value(ratio)*-100%); --tw-exit-translate-x: calc(--value(--translate-*,[percentage],[length])*-1); }&:where(:dir(rtl),[dir="rtl"],[dir="rtl"]*){ --tw-exit-translate-x: calc(--value(integer)*var(--spacing)); --tw-exit-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*100%); --tw-exit-translate-x: calc(--value(ratio)*100%); --tw-exit-translate-x: --value(--translate-*,[percentage],[length]); }}@utility slide-out-to-end{&:dir(ltr){ --tw-exit-translate-x: 100%; }&:dir(rtl){ --tw-exit-translate-x: -100%; }}@utility slide-out-to-end-*{&:where(:dir(ltr),[dir="ltr"],[dir="ltr"]*){ --tw-exit-translate-x: calc(--value(integer)*var(--spacing)); --tw-exit-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*100%); --tw-exit-translate-x: calc(--value(ratio)*100%); --tw-exit-translate-x: --value(--translate-*,[percentage],[length]); }&:where(:dir(rtl),[dir="rtl"],[dir="rtl"]*){ --tw-exit-translate-x: calc(--value(integer)*var(--spacing)*-1); --tw-exit-translate-x: calc(--value(--percentage-*,--percentage-translate-*)*-100%); --tw-exit-translate-x: calc(--value(ratio)*-100%); --tw-exit-translate-x: calc(--value(--translate-*,[percentage],[length])*-1); }}
+@theme inline {
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(
+        --radix-accordion-content-height,
+        var(--accordion-panel-height, auto)
+      );
+    }
+  }
 
-@custom-variant dark (&:is(.dark *));
+  @keyframes accordion-up {
+    from {
+      height: var(
+        --radix-accordion-content-height,
+        var(--accordion-panel-height, auto)
+      );
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+/* Custom variants */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-checked {
+  &:where([data-state="checked"]),
+  &:where([data-checked]:not([data-checked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-unchecked {
+  &:where([data-state="unchecked"]),
+  &:where([data-unchecked]:not([data-unchecked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-selected {
+  &:where([data-selected="true"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-active {
+  &:where([data-state="active"]),
+  &:where([data-active]:not([data-active="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@custom-variant dark {
+  &:is(.dark *) {
+    @slot;
+  }
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    🌈  RAINBOW DESIGN SYSTEM — 7 Sắc Cầu Vồng
@@ -47,6 +146,12 @@
   --app-border: rgba(148, 163, 184, 0.18);
   --app-accent: #54a0ff;
   --app-accent-soft: rgba(84, 160, 255, 0.12);
+
+  /* ── Alert Solid tokens ─────────────────────────────────────────────────── */
+  --alert-error-bg: #2A1825;
+  --alert-warning-bg: #2B2318;
+  --alert-success-bg: #16251D;
+  --alert-info-bg: #161C2E;
 
   /* ── shadcn tokens ───────────────────────────────────────────────────────── */
   --background: oklch(1 0 0);
@@ -256,6 +361,7 @@
 
 body {
   background: var(--app-bg);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif !important;
 }
 
 .app-shell {
@@ -469,4 +575,584 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(196, 77, 255, 0.4);
+}
+
+/* ==========================================
+   🌌 ANTIGRAVITY PREMIUM FUTURISTIC DARK SYSTEM
+   ========================================== */
+
+.antigravity-bg {
+  background: 
+    radial-gradient(circle at 10% 20%, rgba(20, 18, 55, 0.7) 0%, transparent 50%),
+    radial-gradient(circle at 90% 80%, rgba(10, 15, 30, 0.85) 0%, transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(55, 20, 100, 0.18) 0%, transparent 70%),
+    #020205 !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.has-bg-image .antigravity-bg {
+  background: rgba(10, 10, 15, 0.45) !important;
+  backdrop-filter: blur(10px) saturate(120%);
+}
+
+/* Shifting volumetric spotlight glows */
+.antigravity-volumetric::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle at 25% 35%, rgba(95, 39, 205, 0.08) 0%, transparent 35%),
+    radial-gradient(circle at 75% 65%, rgba(84, 160, 255, 0.06) 0%, transparent 40%);
+  animation: volumetric-pulse 15s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes volumetric-pulse {
+  0% { transform: scale(1) translate(0px, 0px); opacity: 0.7; }
+  50% { transform: scale(1.15) translate(30px, -40px); opacity: 1; }
+  100% { transform: scale(0.9) translate(-20px, 30px); opacity: 0.6; }
+}
+
+/* Zero-gravity sinusoidal float keyframes */
+.antigravity-float-slow {
+  animation: float-slow 9s ease-in-out infinite;
+}
+
+.antigravity-float-slower {
+  animation: float-slower 12s ease-in-out infinite;
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-7px) rotate(0.4deg); }
+}
+
+@keyframes float-slower {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-11px) rotate(-0.4deg); }
+}
+
+/* Solid panel - premium dark workspace style */
+.antigravity-panel {
+  background: var(--panel, #16131D) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08)) !important;
+  border-radius: 14px !important;
+  box-shadow: 
+    0 4px 24px -4px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.antigravity-panel:hover {
+  border-color: var(--accent, #8B5CF6) !important;
+  box-shadow: 
+    0 8px 32px -4px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  transform: translateY(-1px);
+}
+
+/* Opaque input field styling */
+.antigravity-input {
+  background: var(--card, #1C1825) !important;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: var(--text-color, #CBD5E1);
+  font-size: 0.95rem !important;
+  padding: 0.75rem 1rem !important;
+  border-radius: 12px !important;
+  transition: all 0.25s ease;
+}
+.antigravity-input:focus {
+  background: var(--table, #1A1622) !important;
+  border-color: var(--accent, #8B5CF6) !important;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15) !important;
+  outline: none;
+}
+
+/* Opaque premium buttons */
+.antigravity-btn {
+  background: var(--card, #1C1825) !important;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: var(--text-color, #CBD5E1) !important;
+  font-weight: 700 !important;
+  padding: 0.75rem 1.25rem !important;
+  border-radius: 12px !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.antigravity-btn:hover {
+  background: var(--table, #1A1622) !important;
+  border-color: var(--accent, #8B5CF6) !important;
+  color: #fff !important;
+  box-shadow: 
+    0 8px 16px -4px rgba(0, 0, 0, 0.3) !important;
+  transform: translateY(-1px);
+}
+.antigravity-btn:active {
+  transform: translateY(0);
+}
+.antigravity-btn:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Ambient Drifting Particles */
+.antigravity-particle {
+  position: absolute;
+  bottom: -20px;
+  width: 6px;
+  height: 6px;
+  background: rgba(84, 160, 255, 0.25);
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(84, 160, 255, 0.5);
+  pointer-events: none;
+  animation: antigravity-drift 20s linear infinite;
+}
+
+/* Make some particles look like organic cherry blossom petals */
+.antigravity-particle:nth-child(3n) {
+  width: 9px;
+  height: 6px;
+  background: rgba(255, 175, 204, 0.35); /* Soft pink cherry-blossom tone */
+  border-radius: 40% 60% 50% 50% / 40% 40% 60% 60%;
+  box-shadow: 0 0 8px rgba(255, 175, 204, 0.4);
+  animation-duration: 25s;
+}
+
+.antigravity-particle:nth-child(3n+1) {
+  width: 4px;
+  height: 4px;
+  background: rgba(196, 77, 255, 0.3); /* Purple ambient glow */
+  box-shadow: 0 0 8px rgba(196, 77, 255, 0.6);
+  animation-duration: 18s;
+}
+
+@keyframes antigravity-drift {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.7;
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-115vh) translateX(80px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   🎨 THEME SELECTOR BACKGROUND OVERRIDES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Default / OLED Black (if class is empty, we default to oled black) */
+body:not(.theme-space-blue):not(.theme-deep-charcoal):not(.theme-rainbow):not(.theme-cherry-pagoda):not(.theme-cherry-river):not(.theme-cherry-castle):not(.theme-cherry-garden):not(.theme-cherry-carpet),
+body.theme-oled-black {
+  background-color: #000000 !important;
+  --background: oklch(0 0 0) !important;
+  --card: oklch(0.08 0 0) !important;
+}
+body:not(.theme-space-blue):not(.theme-deep-charcoal):not(.theme-rainbow):not(.theme-cherry-pagoda):not(.theme-cherry-river):not(.theme-cherry-castle):not(.theme-cherry-garden):not(.theme-cherry-carpet) .antigravity-bg,
+body.theme-oled-black .antigravity-bg {
+  background: #000000 !important;
+}
+body:not(.theme-space-blue):not(.theme-deep-charcoal):not(.theme-rainbow):not(.theme-cherry-pagoda):not(.theme-cherry-river):not(.theme-cherry-castle):not(.theme-cherry-garden):not(.theme-cherry-carpet) .antigravity-volumetric::after,
+body.theme-oled-black .antigravity-volumetric::after {
+  display: none !important;
+}
+
+/* Space Blue Theme */
+body.theme-space-blue {
+  background-color: #020205 !important;
+  --background: oklch(0.1 0.015 240) !important;
+  --card: oklch(0.12 0.02 240 / 50%) !important;
+}
+body.theme-space-blue .antigravity-bg {
+  background: 
+    radial-gradient(circle at 10% 20%, rgba(20, 18, 55, 0.7) 0%, transparent 50%),
+    radial-gradient(circle at 90% 80%, rgba(10, 15, 30, 0.85) 0%, transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(55, 20, 100, 0.18) 0%, transparent 70%),
+    #020205 !important;
+}
+body.theme-space-blue .antigravity-volumetric::after {
+  display: block !important;
+}
+
+/* Deep Charcoal Theme */
+body.theme-deep-charcoal {
+  background-color: #090a0f !important;
+  --background: oklch(0.15 0.01 240) !important;
+  --card: oklch(0.18 0.01 240 / 50%) !important;
+}
+body.theme-deep-charcoal .antigravity-bg {
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.02) 0%, transparent 80%),
+    #090a0f !important;
+}
+body.theme-deep-charcoal .antigravity-volumetric::after {
+  display: block !important;
+  background-image: 
+    radial-gradient(circle at 25% 35%, rgba(255, 255, 255, 0.015) 0%, transparent 35%),
+    radial-gradient(circle at 75% 65%, rgba(255, 255, 255, 0.015) 0%, transparent 40%) !important;
+}
+
+/* 🌸 Sakura Pagoda Theme (Red pagoda with cherry blossoms) */
+body.theme-cherry-pagoda {
+  background: linear-gradient(rgba(10, 5, 15, 0.55), rgba(10, 5, 15, 0.6)), url(/bg-cherry-pagoda.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 320) !important;
+  --card: rgba(15, 8, 20, 0.75) !important;
+}
+body.theme-cherry-pagoda .antigravity-bg {
+  background: linear-gradient(rgba(10, 5, 15, 0.55), rgba(10, 5, 15, 0.6)), url(/bg-cherry-pagoda.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* 🌸 Sakura River Theme (Purple cherry blossom river with bridge) */
+body.theme-cherry-river {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/bg-cherry-river.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-cherry-river .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/bg-cherry-river.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* 🌸 Sakura Castle Theme (Castle with red bridge) */
+body.theme-cherry-castle {
+  background: linear-gradient(rgba(12, 5, 15, 0.5), rgba(12, 5, 15, 0.58)), url(/bg-cherry-castle.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 330) !important;
+  --card: rgba(18, 8, 22, 0.75) !important;
+}
+body.theme-cherry-castle .antigravity-bg {
+  background: linear-gradient(rgba(12, 5, 15, 0.5), rgba(12, 5, 15, 0.58)), url(/bg-cherry-castle.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* 🌸 Sakura Garden Theme (Riverbank with cherry trees) */
+body.theme-cherry-garden {
+  background: linear-gradient(rgba(8, 10, 5, 0.5), rgba(8, 10, 5, 0.58)), url(/bg-cherry-river.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 120) !important;
+  --card: rgba(12, 18, 10, 0.75) !important;
+}
+body.theme-cherry-garden .antigravity-bg {
+  background: linear-gradient(rgba(8, 10, 5, 0.5), rgba(8, 10, 5, 0.58)), url(/bg-cherry-river.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* 🌸 Sakura Carpet Theme (Original cherry blossom carpet) */
+body.theme-cherry-carpet {
+  background: linear-gradient(rgba(12, 5, 10, 0.5), rgba(12, 5, 10, 0.58)), url(/bg-cherry-carpet.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 340) !important;
+  --card: rgba(20, 10, 18, 0.75) !important;
+}
+body.theme-cherry-carpet .antigravity-bg {
+  background: linear-gradient(rgba(12, 5, 10, 0.5), rgba(12, 5, 10, 0.58)), url(/bg-cherry-carpet.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* Cherry theme panels - semi-transparent over photo background */
+body.theme-cherry-pagoda .antigravity-panel,
+body.theme-cherry-river .antigravity-panel,
+body.theme-cherry-castle .antigravity-panel,
+body.theme-cherry-garden .antigravity-panel,
+body.theme-cherry-carpet .antigravity-panel {
+  background: rgba(10, 14, 28, var(--panel-opacity, 0.72)) !important;
+  backdrop-filter: blur(20px) saturate(1.5) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 
+    0 8px 32px -4px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+
+body.theme-cherry-pagoda .antigravity-volumetric::after,
+body.theme-cherry-river .antigravity-volumetric::after,
+body.theme-cherry-castle .antigravity-volumetric::after,
+body.theme-cherry-garden .antigravity-volumetric::after,
+body.theme-cherry-carpet .antigravity-volumetric::after {
+  display: none !important;
+}
+
+/* 🌸 FALLING SAKURA PETALS ANIMATION (for all cherry themes) */
+body[class*="theme-cherry-"] .sakura-petals {
+  display: block !important;
+}
+.sakura-petals {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+.sakura-petal {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(ellipse at 30% 30%, rgba(255, 183, 197, 0.9), rgba(255, 150, 170, 0.6), transparent 70%);
+  border-radius: 50% 0 50% 50%;
+  opacity: 0;
+  animation: sakura-fall linear infinite;
+  filter: blur(0.3px);
+}
+.sakura-petal:nth-child(odd) {
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(ellipse at 30% 30%, rgba(255, 200, 210, 0.85), rgba(255, 170, 190, 0.5), transparent 70%);
+}
+.sakura-petal:nth-child(3n) {
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(ellipse at 30% 30%, rgba(255, 220, 230, 0.8), rgba(255, 190, 205, 0.4), transparent 70%);
+  border-radius: 50% 50% 0 50%;
+}
+
+@keyframes sakura-fall {
+  0% {
+    transform: translateY(-5vh) translateX(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.8;
+  }
+  50% {
+    transform: translateY(50vh) translateX(80px) rotate(180deg) scale(0.9);
+    opacity: 0.7;
+  }
+  95% {
+    opacity: 0.3;
+  }
+  100% {
+    transform: translateY(105vh) translateX(-30px) rotate(360deg) scale(0.6);
+    opacity: 0;
+  }
+}
+
+/* Hide default particles for OLED Black and Rainbow themes */
+body:not(.theme-space-blue):not(.theme-deep-charcoal) .antigravity-particle,
+body.theme-oled-black .antigravity-particle,
+body.theme-rainbow .antigravity-particle {
+  display: none !important;
+}
+
+/* 🌈 theme-rainbow style overrides (Restores original Rainbow UI/UX) */
+body.theme-rainbow {
+  background-color: #050816 !important;
+  --background: oklch(0.12 0.01 240) !important;
+}
+
+body.theme-rainbow .antigravity-bg {
+  background:
+    radial-gradient(ellipse at top right, rgba(196, 77, 255, 0.08), transparent 36rem),
+    radial-gradient(ellipse at top left, rgba(84, 160, 255, 0.07), transparent 30rem),
+    radial-gradient(ellipse at bottom center, rgba(10, 191, 83, 0.04), transparent 40rem),
+    #050816 !important;
+}
+
+body.theme-rainbow .antigravity-panel {
+  background: #0d1a3a !important;
+  border: 1px solid rgba(100, 120, 255, 0.2) !important;
+  box-shadow: 
+    0 4px 24px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(100, 120, 255, 0.06) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.theme-rainbow .antigravity-panel:hover {
+  border-color: rgba(100, 120, 255, 0.35) !important;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.6),
+    0 0 20px rgba(100, 120, 255, 0.1) !important;
+}
+
+body.theme-rainbow .antigravity-btn {
+  background: var(--rainbow-gradient) !important;
+  background-size: 300% 300% !important;
+  animation: rainbow-shift 4s ease infinite !important;
+  color: #fff !important;
+  font-weight: 800 !important;
+  border: none !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2) !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+}
+
+body.theme-rainbow .antigravity-btn:hover {
+  transform: translateY(-1px) !important;
+  box-shadow:
+    0 4px 20px rgba(255, 107, 107, 0.2),
+    0 4px 30px rgba(84, 160, 255, 0.15),
+    0 4px 40px rgba(196, 77, 255, 0.1) !important;
+}
+
+body.theme-rainbow .border-l-rainbow-red    { border-left: 3px solid var(--rainbow-red) !important; }
+body.theme-rainbow .border-l-rainbow-orange { border-left: 3px solid var(--rainbow-orange) !important; }
+body.theme-rainbow .border-l-rainbow-yellow { border-left: 3px solid var(--rainbow-yellow) !important; }
+body.theme-rainbow .border-l-rainbow-green  { border-left: 3px solid var(--rainbow-green) !important; }
+body.theme-rainbow .border-l-rainbow-blue   { border-left: 3px solid var(--rainbow-blue) !important; }
+body.theme-rainbow .border-l-rainbow-indigo { border-left: 3px solid var(--rainbow-indigo) !important; }
+body.theme-rainbow .border-l-rainbow-violet { border-left: 3px solid var(--rainbow-violet) !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   🔧 SIDEBAR - Always visible with solid dark background on all themes
+   ═══════════════════════════════════════════════════════════════════════════════ */
+aside.app-sidebar {
+  position: fixed !important;
+  inset: 0 auto 0 0 !important;
+  z-index: 50 !important;
+  width: 16rem !important;
+  padding: 1rem !important;
+}
+
+aside.app-sidebar > .sidebar-inner {
+  background: rgba(8, 10, 20, 0.92) !important;
+  backdrop-filter: blur(24px) saturate(1.6) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 1.25rem !important;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    4px 0 30px rgba(0, 0, 0, 0.5) !important;
+  height: 100% !important;
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 1.25rem !important;
+  gap: 0.25rem !important;
+}
+
+/* Cherry themes: make sidebar even more opaque so it stands out against the background image */
+body.theme-cherry-castle aside.app-sidebar > .sidebar-inner,
+body.theme-cherry-river aside.app-sidebar > .sidebar-inner,
+body.theme-cherry-carpet aside.app-sidebar > .sidebar-inner,
+body.theme-cherry-pagoda aside.app-sidebar > .sidebar-inner,
+body.theme-cherry-garden aside.app-sidebar > .sidebar-inner {
+  background: rgba(8, 10, 20, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    6px 0 40px rgba(0, 0, 0, 0.7) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   🔐 LOGIN CARD - Always visible with solid dark background on all themes
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.login-card {
+  background: rgba(8, 10, 22, 0.94) !important;
+  backdrop-filter: blur(24px) saturate(1.6) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 1.25rem !important;
+  box-shadow:
+    0 30px 60px -15px rgba(0, 0, 0, 0.85),
+    0 0 40px rgba(84, 160, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  animation: loginFloat 6s ease-in-out infinite;
+}
+
+@keyframes loginFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+/* Cherry themes: even more opaque login card */
+body.theme-cherry-castle .login-card,
+body.theme-cherry-river .login-card,
+body.theme-cherry-carpet .login-card,
+body.theme-cherry-pagoda .login-card,
+body.theme-cherry-garden .login-card {
+  background: rgba(8, 10, 22, 0.97) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  box-shadow:
+    0 30px 60px -15px rgba(0, 0, 0, 0.95),
+    0 0 50px rgba(196, 77, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Explicit sidebar navigation layout rules to prevent horizontal squishing/grouping */
+aside.app-sidebar nav {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.375rem !important;
+}
+
+aside.app-sidebar nav button {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  width: 100% !important;
+  text-align: left !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   📉 COMPACT UI OVERRIDES - Reduces padding/sizes for clean minimal view
+   ───────────────────────────────────────────────────────────────────────────── */
+body {
+  font-size: 13px !important;
+}
+
+.antigravity-panel {
+  padding: 0.85rem !important;
+}
+
+.antigravity-panel .p-6 {
+  padding: 0.85rem !important;
+}
+
+.antigravity-panel .p-5 {
+  padding: 0.75rem !important;
+}
+
+table td, table th,
+.Table td, .Table th {
+  padding: 0.45rem 0.65rem !important;
+  font-size: 0.75rem !important;
+}
+
+.antigravity-input,
+input, select {
+  padding: 0.35rem 0.65rem !important;
+  font-size: 0.75rem !important;
+}
+
+/* 🌈 RAINBOW TEXT STYLE CUSTOMIZER EFFECT */
+body.rainbow-text-active .sidebar-label,
+body.rainbow-text-active h1,
+body.rainbow-text-active h2,
+body.rainbow-text-active h3,
+body.rainbow-text-active h4,
+body.rainbow-text-active label:not(.bg-white\/5),
+body.rainbow-text-active th,
+body.rainbow-text-active .text-slate-400,
+body.rainbow-text-active .text-slate-500 {
+  background: linear-gradient(135deg, #ff6b6b, #ff9f43, #feca57, #0abf53, #54a0ff, #5f27cd, #c44dff) !important;
+  background-size: 200% auto !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  animation: rainbow-shift-text 6s linear infinite !important;
+}
+
+@keyframes rainbow-shift-text {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
 }

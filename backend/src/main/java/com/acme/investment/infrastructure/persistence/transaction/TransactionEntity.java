@@ -36,6 +36,15 @@ public class TransactionEntity {
     @Column(nullable = false, length = 3)
     private String currency;
 
+    @Column(nullable = false, precision = 24, scale = 8)
+    private BigDecimal fee = BigDecimal.ZERO;
+
+    @Column(name = "realized_pnl", nullable = false, precision = 24, scale = 8)
+    private BigDecimal realizedPnl = BigDecimal.ZERO;
+
+    @Column(name = "tax_lot_method", nullable = false)
+    private String taxLotMethod = "FIFO";
+
     @Column(name = "transaction_date", nullable = false)
     private LocalDate transactionDate;
 
@@ -49,10 +58,12 @@ public class TransactionEntity {
 
     public Transaction toDomain() {
         return new Transaction(id, portfolio.getId(), assetSymbol, assetName,
-            type, quantity, price, currency, transactionDate, notes, createdAt);
+            type, quantity, price, currency, transactionDate, notes, createdAt,
+            fee, realizedPnl, taxLotMethod);
     }
 
     public UUID getId() { return id; }
+    public void setId(UUID id) { this.id = id; }
     public PortfolioEntity getPortfolio() { return portfolio; }
     public void setPortfolio(PortfolioEntity p) { this.portfolio = p; }
     public String getAssetSymbol() { return assetSymbol; }
@@ -67,6 +78,12 @@ public class TransactionEntity {
     public void setPrice(BigDecimal p) { this.price = p; }
     public String getCurrency() { return currency; }
     public void setCurrency(String c) { this.currency = c; }
+    public BigDecimal getFee() { return fee; }
+    public void setFee(BigDecimal fee) { this.fee = fee; }
+    public BigDecimal getRealizedPnl() { return realizedPnl; }
+    public void setRealizedPnl(BigDecimal pnl) { this.realizedPnl = pnl; }
+    public String getTaxLotMethod() { return taxLotMethod; }
+    public void setTaxLotMethod(String method) { this.taxLotMethod = method; }
     public LocalDate getTransactionDate() { return transactionDate; }
     public void setTransactionDate(LocalDate d) { this.transactionDate = d; }
     public String getNotes() { return notes; }

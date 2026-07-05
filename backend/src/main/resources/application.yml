@@ -2,9 +2,9 @@ spring:
   application:
     name: investment-platform
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/investment}
-    username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: ${SPRING_DATASOURCE_PASSWORD:postgres123}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5434/investment}
+    username: ${SPRING_DATASOURCE_USERNAME:investment}
+    password: ${SPRING_DATASOURCE_PASSWORD:investment_dev_password}
   jpa:
     hibernate:
       ddl-auto: none
@@ -16,7 +16,7 @@ spring:
   data:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
-      port: ${SPRING_DATA_REDIS_PORT:6379}
+      port: ${SPRING_DATA_REDIS_PORT:6380}
 
 security:
   jwt:
@@ -39,6 +39,11 @@ news:
         source: CoinDesk
       - url: https://feeds.reuters.com/reuters/businessNews
         source: Reuters
+
+journal:
+  attachments:
+    storage-root: ${JOURNAL_ATTACHMENTS_STORAGE_ROOT:./work/journal-attachments}
+    max-file-size-bytes: ${JOURNAL_ATTACHMENTS_MAX_FILE_SIZE_BYTES:10485760}
 
 server:
   error:

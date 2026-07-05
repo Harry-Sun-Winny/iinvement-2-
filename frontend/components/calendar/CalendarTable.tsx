@@ -25,7 +25,7 @@ function compact(value?: number | null, currency = true) {
   const abs = Math.abs(value);
   if (abs >= 1_000_000_000) return `${prefix}${(value / 1_000_000_000).toFixed(2)}B`;
   if (abs >= 1_000_000) return `${prefix}${(value / 1_000_000).toFixed(2)}M`;
-  return `${prefix}${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  return `${prefix}${Number(value.toFixed(2))}`;
 }
 
 function ImpactBadge({ impact }: { impact: MarketCalendarEvent["impact"] }) {
@@ -68,8 +68,8 @@ function CalendarTable({ category, events, loading, page, pageCount, total, onPa
     <div>
       <div className="max-h-[620px] overflow-auto">
         <Table>
-          <TableHeader className="sticky top-0 z-10 bg-[#0b1020]">
-            <TableRow className="border-white/10 hover:bg-transparent">{headers(category, onSort)}</TableRow>
+          <TableHeader className="sticky top-0 z-10 bg-[var(--card)]">
+            <TableRow className="border-white/5 hover:bg-transparent">{headers(category, onSort)}</TableRow>
           </TableHeader>
           <TableBody>
             {events.map(event => <TableRow key={event.id} className="border-white/[0.07] transition-colors hover:bg-cyan-400/[0.035]">{cells(category, event)}</TableRow>)}
