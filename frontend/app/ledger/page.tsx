@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { 
-  BookOpen, Search, RefreshCw, Download, Upload, Trash2, 
-  Layers, CreditCard, Calendar, Bell, BarChart2, ShieldAlert, Loader2
+  BookOpen, Search, Download, Upload, Trash2, 
+  Layers, CreditCard, Calendar, Bell, BarChart2, ShieldAlert, Loader2, AlertTriangle
 } from 'lucide-react';
 import { useLedgerStore } from './store/ledgerStore';
 import DashboardWidgets from './components/DashboardWidgets';
@@ -25,7 +25,6 @@ export default function LedgerPage() {
     notifications,
     searchQuery,
     setSearchQuery,
-    resetToDefaultMockData,
     importBackup,
     exportBackup,
     clearAllNotifications,
@@ -51,150 +50,154 @@ export default function LedgerPage() {
   const [baseCurrency, setBaseCurrency] = useState<string>('VND');
   const [historyPricesMap, setHistoryPricesMap] = useState<Record<string, Record<string, number>>>({});
 
-  // Fetch real transactions + live prices from API (same logic as Holdings page)
-  useEffect(() => {
-    async function loadRealData() {
-      try {
-        setLoading(true);
-        const portfolios = await getPortfolios();
-        const baseCurrencyCode = portfolios.length > 0 ? (portfolios[0].baseCurrency || 'VND') : 'VND';
-        if (portfolios.length > 0) {
-          setBaseCurrency(baseCurrencyCode);
-        }
-        const allRealTxs: Transaction[] = [];
+  const [error, setError] = useState<string | null>(null);
 
-        // Step 1: Load all transactions from all portfolios (same as Holdings)
+  // Fetch real transactions + live prices from API (same logic as Holdings page)
+  const loadRealData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const portfolios = await getPortfolios();
+      const baseCurrencyCode = portfolios.length > 0 ? (portfolios[0].baseCurrency || 'VND') : 'VND';
+      if (portfolios.length > 0) {
+        setBaseCurrency(baseCurrencyCode);
+      }
+      const allRealTxs: Transaction[] = [];
+
+      // Step 1: Load all transactions from all portfolios (same as Holdings)
+      await Promise.all(
+        portfolios.map(async (p) => {
+          try {
+            const txs = await getTransactions(p.id);
+            allRealTxs.push(...txs);
+          } catch (err) {
+            console.error(`Error loading transactions for portfolio ${p.id}:`, err);
+            throw err; // propagate to outer catch block
+          }
+        })
+      );
+
+      if (allRealTxs.length > 0) {
+        // Step 2: Map to LedgerDTO format
+        const mappedTxs: TransactionDTO[] = allRealTxs.map(t => ({
+          id: t.id,
+          portfolioId: t.portfolioId,
+          symbol: t.assetSymbol,
+          assetType: 'STOCK',
+          quantity: t.quantity,
+          price: t.price,
+          type: t.type as 'BUY' | 'SELL',
+          transactionDate: t.transactionDate ? t.transactionDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
+          createdAt: t.createdAt || new Date().toISOString(),
+          updatedAt: t.createdAt || new Date().toISOString(),
+          deletedAt: null,
+          archived: false
+        }));
+        setTransactions(mappedTxs);
+
+        // Clear stale mock data
+        clearMockData();
+
+        // Step 3: Calculate active holdings to fetch relevant data
+        const holdings = calculateHoldings(mappedTxs, undefined, baseCurrencyCode);
+        const activeSymbols = holdings.map(h => h.symbol);
+
+        // Step 4: Fetch live prices, historical dividends, and financial reports from Yahoo Finance
+        const pricesMap: Record<string, number> = {};
+        const allDividendEvents: any[] = [];
+        const allReports: any[] = [];
+        const tempHistoryPricesMap: Record<string, Record<string, number>> = {};
+
+        // Find the earliest purchase date for each symbol to get all dividends since purchase
+        const symbolEarliestDates: Record<string, string> = {};
+        mappedTxs.forEach(t => {
+          if (t.type === 'BUY') {
+            if (!symbolEarliestDates[t.symbol] || t.transactionDate < symbolEarliestDates[t.symbol]) {
+              symbolEarliestDates[t.symbol] = t.transactionDate;
+            }
+          }
+        });
+
         await Promise.all(
-          portfolios.map(async (p) => {
+          activeSymbols.map(async (symbol) => {
+            // 4a. Fetch current price
             try {
-              const txs = await getTransactions(p.id);
-              allRealTxs.push(...txs);
-            } catch (err) {
-              console.error(`Error loading transactions for portfolio ${p.id}:`, err);
+              const quote = await getStockPrice(symbol);
+              if (quote && typeof quote.price === 'number' && Number.isFinite(quote.price) && quote.price > 0) {
+                pricesMap[symbol] = quote.price;
+              }
+            } catch (e) {
+              console.error(`Failed to fetch stock price for ${symbol}`, e);
+            }
+
+            // 4b. Fetch dividends since earliest purchase date
+            const startDate = symbolEarliestDates[symbol] || '2010-01-01';
+            try {
+              const res = await fetch(`/api/stock-dividends?symbol=${encodeURIComponent(symbol)}&startDate=${startDate}`);
+              if (res.ok) {
+                const dividends = await res.json();
+                if (Array.isArray(dividends)) {
+                  allDividendEvents.push(...dividends);
+                }
+              }
+            } catch (e) {
+              console.error(`Failed to fetch dividends for ${symbol}`, e);
+            }
+
+            // 4c. Fetch financial statements
+            try {
+              const res = await fetch(`/api/stock-financials?symbol=${encodeURIComponent(symbol)}`);
+              if (res.ok) {
+                const financials = await res.json();
+                if (Array.isArray(financials)) {
+                  allReports.push(...financials);
+                }
+              }
+            } catch (e) {
+              console.error(`Failed to fetch financials for ${symbol}`, e);
+            }
+
+            // 4d. Fetch historical stock prices
+            try {
+              const res = await fetch(`/api/stock-history?symbol=${encodeURIComponent(symbol)}&range=Max`);
+              if (res.ok) {
+                const historyData = await res.json();
+                if (historyData && Array.isArray(historyData.points)) {
+                  const monthPrices: Record<string, number> = {};
+                  historyData.points.forEach((pt: any) => {
+                    if (pt && pt.date) {
+                      const monthKey = pt.date.slice(0, 7); // "YYYY-MM"
+                      monthPrices[monthKey] = pt.adjustedClose ?? pt.close ?? 0;
+                    }
+                  });
+                  tempHistoryPricesMap[symbol] = monthPrices;
+                }
+              }
+            } catch (e) {
+              console.error(`Failed to fetch history prices for ${symbol}`, e);
             }
           })
         );
 
-        if (allRealTxs.length > 0) {
-          // Step 2: Map to LedgerDTO format
-          const mappedTxs: TransactionDTO[] = allRealTxs.map(t => ({
-            id: t.id,
-            portfolioId: t.portfolioId,
-            symbol: t.assetSymbol,
-            assetType: 'STOCK',
-            quantity: t.quantity,
-            price: t.price,
-            type: t.type as 'BUY' | 'SELL',
-            transactionDate: t.transactionDate ? t.transactionDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
-            createdAt: t.createdAt || new Date().toISOString(),
-            updatedAt: t.createdAt || new Date().toISOString(),
-            deletedAt: null,
-            archived: false
-          }));
-          setTransactions(mappedTxs);
-
-          // Clear stale mock data
-          clearMockData();
-
-          // Step 3: Calculate active holdings to fetch relevant data
-          const holdings = calculateHoldings(mappedTxs, undefined, baseCurrencyCode);
-          const activeSymbols = holdings.map(h => h.symbol);
-
-          // Step 4: Fetch live prices, historical dividends, and financial reports from Yahoo Finance
-          const pricesMap: Record<string, number> = {};
-          const allDividendEvents: any[] = [];
-          const allReports: any[] = [];
-          const tempHistoryPricesMap: Record<string, Record<string, number>> = {};
-
-          // Find the earliest purchase date for each symbol to get all dividends since purchase
-          const symbolEarliestDates: Record<string, string> = {};
-          mappedTxs.forEach(t => {
-            if (t.type === 'BUY') {
-              if (!symbolEarliestDates[t.symbol] || t.transactionDate < symbolEarliestDates[t.symbol]) {
-                symbolEarliestDates[t.symbol] = t.transactionDate;
-              }
-            }
-          });
-
-          await Promise.all(
-            activeSymbols.map(async (symbol) => {
-              // 4a. Fetch current price
-              try {
-                const quote = await getStockPrice(symbol);
-                if (quote && typeof quote.price === 'number' && Number.isFinite(quote.price) && quote.price > 0) {
-                  pricesMap[symbol] = quote.price;
-                }
-              } catch (e) {
-                console.error(`Failed to fetch stock price for ${symbol}`, e);
-              }
-
-              // 4b. Fetch dividends since earliest purchase date
-              const startDate = symbolEarliestDates[symbol] || '2010-01-01';
-              try {
-                const res = await fetch(`/api/stock-dividends?symbol=${encodeURIComponent(symbol)}&startDate=${startDate}`);
-                if (res.ok) {
-                  const dividends = await res.json();
-                  if (Array.isArray(dividends)) {
-                    allDividendEvents.push(...dividends);
-                  }
-                }
-              } catch (e) {
-                console.error(`Failed to fetch dividends for ${symbol}`, e);
-              }
-
-              // 4c. Fetch financial statements
-              try {
-                const res = await fetch(`/api/stock-financials?symbol=${encodeURIComponent(symbol)}`);
-                if (res.ok) {
-                  const financials = await res.json();
-                  if (Array.isArray(financials)) {
-                    allReports.push(...financials);
-                  }
-                }
-              } catch (e) {
-                console.error(`Failed to fetch financials for ${symbol}`, e);
-              }
-
-              // 4d. Fetch historical stock prices
-              try {
-                const res = await fetch(`/api/stock-history?symbol=${encodeURIComponent(symbol)}&range=Max`);
-                if (res.ok) {
-                  const historyData = await res.json();
-                  if (historyData && Array.isArray(historyData.points)) {
-                    const monthPrices: Record<string, number> = {};
-                    historyData.points.forEach((pt: any) => {
-                      if (pt && pt.date) {
-                        const monthKey = pt.date.slice(0, 7); // "YYYY-MM"
-                        monthPrices[monthKey] = pt.adjustedClose ?? pt.close ?? 0;
-                      }
-                    });
-                    tempHistoryPricesMap[symbol] = monthPrices;
-                  }
-                }
-              } catch (e) {
-                console.error(`Failed to fetch history prices for ${symbol}`, e);
-              }
-            })
-          );
-
-          setCurrentPrices(pricesMap);
-          setDividendEvents(allDividendEvents);
-          setReports(allReports);
-          setHistoryPricesMap(tempHistoryPricesMap);
-        } else {
-          // No transactions in database - use mock data as demo
-          resetToDefaultMockData();
-        }
-      } catch (e) {
-        console.error("Failed to load real database transactions:", e);
-        resetToDefaultMockData();
-      } finally {
-        setLoading(false);
+        setCurrentPrices(pricesMap);
+        setDividendEvents(allDividendEvents);
+        setReports(allReports);
+        setHistoryPricesMap(tempHistoryPricesMap);
+      } else {
+        setTransactions([]);
+        clearMockData();
       }
+    } catch (e: any) {
+      console.error("Failed to load real database transactions:", e);
+      setError(e.message || "Không thể tải dữ liệu từ máy chủ. Vui lòng kiểm tra lại kết nối.");
+    } finally {
+      setLoading(false);
     }
+  }, [setTransactions, clearMockData, setReports, setDividendEvents]);
 
+  useEffect(() => {
     loadRealData();
-  }, [setTransactions, resetToDefaultMockData, clearMockData, setReports, setDividendEvents]);
+  }, [loadRealData]);
 
   // Global search filtering
   const filteredTransactions = useMemo(() => {
@@ -286,17 +289,7 @@ export default function LedgerPage() {
             />
           </div>
 
-          <button 
-            onClick={() => {
-              if (confirm('Khôi phục danh mục giả lập 16 năm mặc định? Việc này sẽ ghi đè các chỉnh sửa của bạn.')) {
-                resetToDefaultMockData();
-              }
-            }}
-            className="p-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white rounded-xl border border-white/5 transition-all"
-            title="Tải lại Mock Data"
-          >
-            <RefreshCw size={14} />
-          </button>
+
 
           <button 
             onClick={handleExport}
@@ -344,10 +337,30 @@ export default function LedgerPage() {
 
       {/* Main Tab Contents */}
       <main className="flex-1 min-h-0">
-        {loading ? (
+        {error ? (
+          <div className="flex flex-col items-center justify-center py-20 border border-red-500/10 bg-red-500/[0.01] rounded-3xl p-8 text-center max-w-md mx-auto">
+            <AlertTriangle className="h-10 w-10 text-red-500 mb-4 animate-bounce" />
+            <h3 className="text-sm font-bold text-white mb-2">Lỗi tải dữ liệu</h3>
+            <p className="text-xs text-red-400 mb-6">{error}</p>
+            <button
+              onClick={loadRealData}
+              className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20"
+            >
+              Thử lại
+            </button>
+          </div>
+        ) : loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Loader2 size={32} className="text-indigo-400 animate-spin" />
             <p className="text-xs text-slate-400">Đang tải dữ liệu từ danh mục đầu tư...</p>
+          </div>
+        ) : transactions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 border border-white/5 bg-white/[0.01] rounded-3xl p-8 text-center max-w-md mx-auto">
+            <BookOpen className="h-10 w-10 text-slate-500 mb-4" />
+            <h3 className="text-sm font-bold text-white mb-2">No transactions found.</h3>
+            <p className="text-xs text-slate-400">
+              Create your first transaction or import a CSV file to begin.
+            </p>
           </div>
         ) : (
         <>
