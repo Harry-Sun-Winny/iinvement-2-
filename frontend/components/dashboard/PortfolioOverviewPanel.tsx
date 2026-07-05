@@ -6,11 +6,11 @@ import {
   Area,
   AreaChart,
   Legend,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import { CheckCircle, GitMerge, RefreshCw, TrendingUp } from "lucide-react";
 import ChartTooltip from "@/components/charts/ChartTooltip";
 
@@ -270,7 +270,7 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
               Chua co du lieu snapshot lich su. Nhan "Dong bo Snapshot" de tao du lieu.
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <AutoSizedChart>
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="valGrad" x1="0" y1="0" x2="0" y2="1">
@@ -289,7 +289,7 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
                 <Area type="monotone" dataKey="value" name="Gia tri" stroke="#8884d8" fillOpacity={1} fill="url(#valGrad)" strokeWidth={2} />
                 <Area type="monotone" dataKey="cost" name="Gia von" stroke="#82ca9d" fillOpacity={1} fill="url(#costGrad)" strokeWidth={1.5} strokeDasharray="4 4" />
               </AreaChart>
-            </ResponsiveContainer>
+            </AutoSizedChart>
           )}
         </CardContent>
       </Card>

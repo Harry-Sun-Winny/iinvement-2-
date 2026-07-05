@@ -1,13 +1,13 @@
 import { HoldingExt } from "@/app/holdings/page";
 import { Badge } from "@/components/ui/badge";
 import {
-  ResponsiveContainer,
   Radar,
   RadarChart,
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
 } from "recharts";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import { getWeightForSector, recommendation, scorePosition, weightedScore } from "@/lib/analysis-framework";
 
 export function AnalysisTab({ holding, marketData }: { holding: HoldingExt, marketData?: any }) {
@@ -65,14 +65,14 @@ export function AnalysisTab({ holding, marketData }: { holding: HoldingExt, mark
           
           <div className="h-[250px] flex items-center justify-center">
             {radarData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <AutoSizedChart>
                 <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
                   <PolarGrid stroke="#1e293b" />
                   <PolarAngleAxis dataKey="pillar" tick={{ fill: "#cbd5e1", fontSize: 10 }} />
                   <PolarRadiusAxis angle={30} domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fill: "#475569", fontSize: 8 }} />
                   <Radar name="Score" dataKey="score" stroke="#c44dff" fill="#c44dff" fillOpacity={0.25} />
                 </RadarChart>
-              </ResponsiveContainer>
+              </AutoSizedChart>
             ) : (
               <span className="text-slate-600 text-xs">-- (No analysis available)</span>
             )}

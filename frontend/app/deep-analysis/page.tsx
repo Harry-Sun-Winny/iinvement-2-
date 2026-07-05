@@ -9,11 +9,11 @@ import {
   Legend,
   Line,
   LineChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import { Activity, RefreshCw, ShieldAlert, TrendingUp } from "lucide-react";
 import {
   ApiError,
@@ -268,7 +268,7 @@ export default function DeepAnalysisPage() {
                 Duong xanh cho gia tri danh muc, duong vang la dinh chay, vung do la drawdown.
               </p>
               <div className="h-[340px]">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <AutoSizedChart>
                   <AreaChart data={drawdownChartData} margin={{ top: 10, right: 8, left: -16, bottom: 0 }}>
                     <defs>
                       <linearGradient id="deepValue" x1="0" y1="0" x2="0" y2="1">
@@ -290,7 +290,7 @@ export default function DeepAnalysisPage() {
                     <Line yAxisId="left" type="monotone" dataKey="peak" name="Dinh chay" stroke="#fbbf24" strokeWidth={1.5} dot={false} />
                     <Area yAxisId="right" type="monotone" dataKey="drawdown" name="Drawdown %" stroke="#fb7185" fill="url(#deepDrawdown)" strokeWidth={1.5} />
                   </AreaChart>
-                </ResponsiveContainer>
+                </AutoSizedChart>
               </div>
             </article>
 
@@ -332,7 +332,7 @@ export default function DeepAnalysisPage() {
                 Chuoi 30 ngay giup nhin xu huong rui ro thay doi theo thoi gian thay vi chi mot diem tong ket.
               </p>
               <div className="h-[320px]">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <AutoSizedChart>
                   <LineChart data={rollingChartData} margin={{ top: 10, right: 8, left: -16, bottom: 0 }}>
                     <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
                     <XAxis dataKey="date" stroke="#64748b" tickLine={false} fontSize={11} />
@@ -344,7 +344,7 @@ export default function DeepAnalysisPage() {
                     <Line type="monotone" dataKey="var95" name="VaR 95% (pct)" stroke="#fb7185" strokeWidth={1.6} dot={false} />
                     <Line type="monotone" dataKey="cvar95" name="CVaR 95% (pct)" stroke="#f59e0b" strokeWidth={1.6} dot={false} />
                   </LineChart>
-                </ResponsiveContainer>
+                </AutoSizedChart>
               </div>
             </article>
 

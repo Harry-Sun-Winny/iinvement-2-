@@ -15,6 +15,7 @@ const SYMBOL_ALIASES: Record<string, string> = {
   UMC: "UMC",
   ASE: "ASX",
   SANTA: "SAN",
+  APPLE: "AAPL",
 };
 
 function getSymbolCandidates(symbol: string) {
@@ -22,7 +23,7 @@ function getSymbolCandidates(symbol: string) {
   const alias = SYMBOL_ALIASES[normalized] ?? normalized;
   if (alias.includes(".")) return [alias];
   if (/^\d{4,6}$/.test(alias)) return [`${alias}.TW`, `${alias}.TWO`, alias];
-  return [alias];
+  return [alias, `${alias}.VN`];
 }
 
 async function getUsdRate(currency: string): Promise<number> {

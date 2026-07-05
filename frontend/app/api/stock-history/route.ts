@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import YahooFinanceClass from "yahoo-finance2";
 const yahooFinance = new YahooFinanceClass();
 
@@ -23,6 +23,8 @@ const SYMBOL_ALIASES: Record<string, string> = {
   MEDIATEK: "2454.TW",
   UMC: "UMC",
   ASE: "ASX",
+  SANTA: "SAN",
+  APPLE: "AAPL",
 };
 
 function getSymbolCandidates(symbol: string) {
@@ -30,7 +32,7 @@ function getSymbolCandidates(symbol: string) {
   const alias = SYMBOL_ALIASES[normalized] ?? normalized;
   if (alias.includes(".")) return [alias];
   if (/^\d{4,6}$/.test(alias)) return [`${alias}.TW`, `${alias}.TWO`, alias];
-  return [alias];
+  return [alias, `${alias}.VN`];
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -161,5 +163,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ error: "Failed", details: String(lastError) }, { status: 500 });
+  return NextResponse.json({
+    symbol,
+    currency: "USD",
+    exchangeName: "Unknown",
+    points: [],
+    error: "Failed to fetch history from Yahoo Finance",
+    details: String(lastError)
+  });
 }

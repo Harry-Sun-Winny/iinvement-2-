@@ -1,5 +1,6 @@
 import { HoldingExt } from "@/app/holdings/page";
-import { ResponsiveContainer, LineChart, Line, YAxis } from "recharts";
+import { LineChart, Line, YAxis } from "recharts";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 
 export function PositionTab({ holding, transactions, marketData }: { holding: HoldingExt, transactions: any[], marketData?: any }) {
   const formatNum = (num: number | undefined, prefix = "", suffix = "") => 
@@ -64,12 +65,12 @@ export function PositionTab({ holding, transactions, marketData }: { holding: Ho
         <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-4">6-Month Price Chart</p>
         <div className="h-32 flex items-center justify-center border border-dashed border-white/5 rounded">
           {marketData?.historicalPrices && marketData.historicalPrices.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <AutoSizedChart>
               <LineChart data={marketData.historicalPrices.slice().reverse()}>
                 <YAxis domain={["auto", "auto"]} hide />
                 <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} />
               </LineChart>
-            </ResponsiveContainer>
+            </AutoSizedChart>
           ) : (
             <span className="text-slate-600 text-xs">-- (No historical price data)</span>
           )}

@@ -25,8 +25,11 @@ export function InstitutionalDetailPanel({ positions, transactions }: { position
 
   useEffect(() => {
     if (selectedSymbol) {
+      setMarketData(null);
       getMarketDetails(selectedSymbol).then(data => {
         setMarketData(data);
+      }).catch(() => {
+        setMarketData(null);
       });
     }
   }, [selectedSymbol]);

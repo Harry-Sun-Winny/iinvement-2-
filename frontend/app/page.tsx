@@ -9,7 +9,6 @@ import {
   Cell,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -504,10 +503,10 @@ export default function Page() {
             {/* Embedded Header Controls */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-white/5 p-6 gap-4 bg-white/[0.01]">
               <div className="flex items-center gap-6">
-                <h2 className="text-xl font-black text-white tracking-widest uppercase">Console</h2>
+                <h2 className="text-[12px] font-black text-white/95 tracking-[0.2em] uppercase">Console</h2>
                 
                 {/* Horizontal Tab Buttons inside Table Card */}
-                <div className="flex bg-white/5 p-1 rounded-lg border border-white/5">
+                <div className="flex bg-zinc-950/60 p-1 rounded-xl border border-white/5 gap-0.5">
                   {(["portfolios", "watchlists", "goals", "news"] as Tab[]).map((tab) => (
                     <button
                       key={tab}
@@ -515,10 +514,10 @@ export default function Page() {
                         setActive(tab);
                         if (tab === "news" && newsItems.length === 0) loadNews();
                       }}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-300 ${
+                      className={`px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-200 ${
                         active === tab
-                          ? "bg-white/10 text-white shadow-sm"
-                          : "text-slate-400 hover:text-white"
+                          ? "bg-white/[0.08] text-white shadow-sm"
+                          : "text-slate-400 hover:text-white hover:bg-white/[0.02]"
                       }`}
                     >
                       {tab === "portfolios"

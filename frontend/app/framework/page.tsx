@@ -14,13 +14,13 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   Radar,
   RadarChart,
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
 } from "recharts";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import {
   BookOpen,
   PieChart as PieIcon,
@@ -354,7 +354,7 @@ export default function FrameworkPage() {
                   </CardHeader>
                   <CardContent className="h-[300px] pt-4">
                     {mounted && (
-                      <ResponsiveContainer width="100%" height="100%">
+                      <AutoSizedChart>
                         <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                           <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
                           <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
@@ -366,7 +366,7 @@ export default function FrameworkPage() {
                           <Bar dataKey="Định lượng" fill="#f59e0b" stackId="a" />
                           <Bar dataKey="Tâm lý" fill="#a855f7" stackId="a" />
                         </BarChart>
-                      </ResponsiveContainer>
+                      </AutoSizedChart>
                     )}
                   </CardContent>
                 </Card>
@@ -561,14 +561,14 @@ export default function FrameworkPage() {
                     </CardHeader>
                     <CardContent className="h-[240px] flex items-center justify-center pt-2">
                       {mounted && (
-                        <ResponsiveContainer width="100%" height="100%">
+                        <AutoSizedChart>
                           <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
                             <PolarGrid stroke="#1e293b" />
                             <PolarAngleAxis dataKey="subject" tick={{ fill: "#cbd5e1", fontSize: 11 }} />
                             <PolarRadiusAxis angle={30} domain={[0, 50]} dataKey="weight" tick={{ fill: "#475569", fontSize: 9 }} />
                             <Radar name="Trọng số" dataKey="weight" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
                           </RadarChart>
-                        </ResponsiveContainer>
+                        </AutoSizedChart>
                       )}
                     </CardContent>
                   </Card>

@@ -321,6 +321,13 @@ export async function getMarketDetails(symbol: string): Promise<MarketDetailsRes
   const normalized = symbol.trim().toUpperCase();
   if (!normalized) return null;
 
+  try {
+    const backendData = await request<any>(`/api/v1/market/${encodeURIComponent(normalized)}/details`);
+    if (backendData) {
+      return backendData;
+    }
+  } catch {}
+
   const [profile, history, valuation, income] = await Promise.all([
     fetchLooseJson<any>(`/api/stock-profile?symbol=${encodeURIComponent(normalized)}`),
     fetchLooseJson<any>(`/api/stock-history?symbol=${encodeURIComponent(normalized)}&range=6M`),

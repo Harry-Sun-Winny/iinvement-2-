@@ -1,7 +1,8 @@
 "use client";
 
 import { memo, useState, useEffect } from "react";
-import { PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer } from "recharts";
+import { PolarAngleAxis, RadialBar, RadialBarChart } from "recharts";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 function heatLabel(value: number) {
@@ -26,12 +27,12 @@ function MarketHeatGauge({ value }: { value: number }) {
       </CardHeader>
       <CardContent className="relative h-52">
         {mounted && (
-          <ResponsiveContainer width="100%" height="100%">
+          <AutoSizedChart>
             <RadialBarChart innerRadius="72%" outerRadius="100%" data={[{ value, fill: color }]} startAngle={210} endAngle={-30} barSize={14}>
               <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
               <RadialBar dataKey="value" background={{ fill: "#1e293b" }} cornerRadius={8} />
             </RadialBarChart>
-          </ResponsiveContainer>
+          </AutoSizedChart>
         )}
         <div className="pointer-events-none absolute inset-x-0 top-[46%] text-center">
           <p className="text-4xl font-semibold text-white">{value}</p>

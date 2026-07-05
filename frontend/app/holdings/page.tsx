@@ -13,12 +13,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 import Alert from "@/components/ui/Alert";
 import ChartTooltip from "@/components/charts/ChartTooltip";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import {
   PieChart,
   Pie,
   Cell,
   Tooltip,
-  ResponsiveContainer,
   Radar,
   RadarChart,
   PolarGrid,
@@ -475,7 +475,7 @@ export default function HoldingsPage() {
               </CardHeader>
               <CardContent className="h-[200px]">
                 {mounted && (
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                  <AutoSizedChart>
                     <PieChart>
                       <Pie data={analytics.industryAlloc} dataKey="value" nameKey="name" innerRadius={48} outerRadius={78}>
                         {analytics.industryAlloc.map((e, i) => (
@@ -484,7 +484,7 @@ export default function HoldingsPage() {
                       </Pie>
                       <Tooltip content={<ChartTooltip valueFormatter={(v) => `$${Number(v).toLocaleString()}`} />} />
                     </PieChart>
-                  </ResponsiveContainer>
+                  </AutoSizedChart>
                 )}
               </CardContent>
             </Card>
@@ -498,7 +498,7 @@ export default function HoldingsPage() {
               </CardHeader>
               <CardContent className="h-[200px]">
                 {mounted && (
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                  <AutoSizedChart>
                     <PieChart>
                       <Pie data={analytics.countryAlloc} dataKey="value" nameKey="name" innerRadius={48} outerRadius={78}>
                         {analytics.countryAlloc.map((e, i) => (
@@ -507,7 +507,7 @@ export default function HoldingsPage() {
                       </Pie>
                       <Tooltip content={<ChartTooltip valueFormatter={(v) => `$${Number(v).toLocaleString()}`} />} />
                     </PieChart>
-                  </ResponsiveContainer>
+                  </AutoSizedChart>
                 )}
               </CardContent>
             </Card>
@@ -542,14 +542,14 @@ export default function HoldingsPage() {
                 </CardHeader>
                 <CardContent className="h-[180px] flex items-center justify-center pt-2">
                   {mounted && (
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                    <AutoSizedChart>
                       <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
                         <PolarGrid stroke="#1e293b" />
                         <PolarAngleAxis dataKey="pillar" tick={{ fill: "#cbd5e1", fontSize: 10 }} />
                         <PolarRadiusAxis angle={30} domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fill: "#475569", fontSize: 8 }} />
                         <Radar name="Điểm" dataKey="score" stroke="#c44dff" fill="#c44dff" fillOpacity={0.25} />
                       </RadarChart>
-                    </ResponsiveContainer>
+                    </AutoSizedChart>
                   )}
                 </CardContent>
               </Card>

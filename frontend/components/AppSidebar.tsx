@@ -24,6 +24,7 @@ export default function AppSidebar() {
   // Auto calculate active menu tab
   const getActiveTab = (): string => {
     if (pathname === "/") return "dashboard";
+    if (pathname.startsWith("/ledger")) return "ledger";
     if (pathname.startsWith("/market-calendar")) return "market-calendar";
     if (pathname.startsWith("/market")) return "market";
     if (pathname.startsWith("/analysis")) return "analysis";
@@ -41,6 +42,7 @@ export default function AppSidebar() {
   const mainGroup = [
     { page: "dashboard", href: "/",           icon: BarChart3,     label: "Dashboard" },
     { page: "holdings",  href: "/holdings",   icon: LayoutGrid,    label: "Holdings" },
+    { page: "ledger",    href: "/ledger",     icon: BookOpen,      label: "Sổ Cái Tài Sản" },
   ];
 
   const toolsGroup = [
