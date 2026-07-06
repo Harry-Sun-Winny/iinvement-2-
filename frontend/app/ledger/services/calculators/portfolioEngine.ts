@@ -22,11 +22,12 @@ export interface AssetHolding {
 }
 export function getCurrencyConversionFactor(symbol: string, baseCurrency: string): number {
   const normSymbol = symbol.trim().toUpperCase();
-  const isUsdStock = [
-    'AAPL', 'APPLE', 'MSFT', 'SANTA', 'SAN', 'JPM', 'CAT', 'AMZN', 'ADI', 'NVDA', 'AVGO', 'SPCX',
-    'AMD', 'MU', 'LRCX', 'KLAC', 'PANW', 'TSM', 'AMAT', 'CRWD', 'PLTR', 'ARM', 'SNDK',
-    'TSLA', 'GOOG', 'BAC', 'LLY', 'MRVL'
-  ].includes(normSymbol);
+  
+  const isVnStock = /^[A-Z]{3}$/.test(normSymbol)
+    ? !['AMD', 'BAC', 'CAT', 'LLY', 'LTY', 'JPM', 'SAN', 'TSM', 'ARM'].includes(normSymbol)
+    : normSymbol.endsWith('.VN');
+    
+  const isUsdStock = !isVnStock;
   
   if (baseCurrency === 'VND') {
     return isUsdStock ? 25400 : 1;
