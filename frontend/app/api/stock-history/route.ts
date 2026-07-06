@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import YahooFinanceClass from "yahoo-finance2";
+import { httpsGet } from "../utils";
 const yahooFinance = new YahooFinanceClass();
 
 const USER_AGENT = "Mozilla/5.0 InvestmentPlatform/0.1";
@@ -75,6 +76,67 @@ async function fetchFundamentals(symbol: string): Promise<FundamentalPoint[]> {
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+async function getUsdRate(currency: string): Promise<number> {
+  if (!currency || currency === "USD") return 1;
+
+  const subunitMap: Record<string, { parent: string; divisor: number }> = {
+    GBp: { parent: "GBP", divisor: 100 },
+    ZAc: { parent: "ZAR", divisor: 100 },
+    ILA: { parent: "ILS", divisor: 100 },
+    AUc: { parent: "AUD", divisor: 100 },
+    NZc: { parent: "NZD", divisor: 100 },
+    CAc: { parent: "CAD", divisor: 100 },
+    HKc: { parent: "HKD", divisor: 100 },
+    SGc: { parent: "SGD", divisor: 100 },
+    MYs: { parent: "MYR", divisor: 100 },
+    THS: { parent: "THB", divisor: 100 },
+    INp: { parent: "INR", divisor: 100 },
+    PKp: { parent: "PKR", divisor: 100 },
+    BDt: { parent: "BDT", divisor: 100 },
+    LKc: { parent: "LKR", divisor: 100 },
+    AEf: { parent: "AED", divisor: 100 },
+    BHf: { parent: "BHD", divisor: 1000 },
+    KWf: { parent: "KWD", divisor: 1000 },
+    OMb: { parent: "OMR", divisor: 1000 },
+    JDp: { parent: "JOD", divisor: 1000 },
+    SAr: { parent: "SAR", divisor: 100 },
+    QAr: { parent: "QAR", divisor: 100 },
+    BRc: { parent: "BRL", divisor: 100 },
+    MXc: { parent: "MXN", divisor: 100 },
+    ARc: { parent: "ARS", divisor: 100 },
+    CLc: { parent: "CLP", divisor: 100 },
+    COc: { parent: "COP", divisor: 100 },
+    PEc: { parent: "PEN", divisor: 100 },
+    TRk: { parent: "TRY", divisor: 100 },
+    RUb: { parent: "RUB", divisor: 100 },
+    UAk: { parent: "UAH", divisor: 100 },
+    PLg: { parent: "PLN", divisor: 100 },
+    CZh: { parent: "CZK", divisor: 100 },
+    HUf: { parent: "HUF", divisor: 100 },
+    ROb: { parent: "RON", divisor: 100 },
+    CNf: { parent: "CNY", divisor: 100 },
+    JPs: { parent: "JPY", divisor: 1 },
+    KRW: { parent: "KRW", divisor: 1 },
+    VND: { parent: "VND", divisor: 1 },
+    IDR: { parent: "IDR", divisor: 1 },
+    TWc: { parent: "TWD", divisor: 100 },
+  };
+
+  const sub = subunitMap[currency];
+  const actualCurrency = sub ? sub.parent : currency;
+
+  try {
+    const data = await httpsGet(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${actualCurrency}USD=X?interval=1d&range=1d`,
+      { "User-Agent": "Mozilla/5.0" }
+    );
+    const rate = data.chart?.result?.[0]?.meta?.regularMarketPrice ?? 1;
+    return sub ? rate / sub.divisor : rate;
+  } catch {
+    return 1;
+  }
+}
+
 async function fetchYahooHistory(symbol: string, range: string, interval: "1d" | "1mo") {
   let period1 = new Date();
   if (range === "1mo") period1.setMonth(period1.getMonth() - 1);
@@ -95,12 +157,19 @@ async function fetchYahooHistory(symbol: string, range: string, interval: "1d" |
   const quotes = chart.quotes ?? [];
   if (quotes.length === 0) throw new Error("Yahoo history missing data");
 
+  const currency = chart.meta.currency || "USD";
+  const usdRate = await getUsdRate(currency);
+
   const points = quotes
     .map((q) => {
-      const close = finiteNumber(q.close);
-      const adjustedClose = finiteNumber(q.adjclose) ?? close;
+      const closeRaw = finiteNumber(q.close);
+      const adjustedCloseRaw = finiteNumber(q.adjclose) ?? closeRaw;
       const volume = finiteNumber(q.volume);
-      if (close == null && adjustedClose == null) return null;
+      if (closeRaw == null && adjustedCloseRaw == null) return null;
+      
+      const close = closeRaw != null ? closeRaw * usdRate : null;
+      const adjustedClose = adjustedCloseRaw != null ? adjustedCloseRaw * usdRate : null;
+
       return {
         date: new Date(q.date).toISOString().slice(0, 10),
         close,
@@ -111,7 +180,7 @@ async function fetchYahooHistory(symbol: string, range: string, interval: "1d" |
     .filter(Boolean);
 
   return {
-    currency: chart.meta.currency || "USD",
+    currency: "USD",
     exchangeName: chart.meta.exchangeName,
     points,
   };
