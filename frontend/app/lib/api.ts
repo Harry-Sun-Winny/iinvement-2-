@@ -78,7 +78,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new ApiError(res.status, message);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  return await res.json();
 }
 
 async function getErrorText(res: Response) {
@@ -311,7 +311,7 @@ async function fetchLooseJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
-    return res.json();
+    return await res.json();
   } catch {
     return null;
   }
