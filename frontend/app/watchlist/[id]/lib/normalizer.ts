@@ -98,7 +98,6 @@ export function normalizeDashboardData(
     publishedAt: n.publishedAt || "",
   })) : [];
 
-  console.log(`[Normalizer] Successfully normalized data for ticker: ${symbol}`);
 
   return {
     symbol,

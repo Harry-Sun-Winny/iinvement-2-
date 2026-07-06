@@ -129,8 +129,7 @@ public class MarketDataService {
                 mergeMarketData(result, fundamentals);
             }
         } catch (Exception e) {
-            System.err.println("[MarketDataService] Failed to fetch fundamentals for " + symbol + ":");
-            e.printStackTrace();
+            log.error("[MarketDataService] Failed to fetch fundamentals for {}", symbol, e);
         }
 
         // 2. Analyst Consensus (Finnhub primary)
@@ -140,8 +139,7 @@ public class MarketDataService {
                 mergeMarketData(result, consensus);
             }
         } catch (Exception e) {
-            System.err.println("[MarketDataService] Failed to fetch consensus for " + symbol + ":");
-            e.printStackTrace();
+            log.error("[MarketDataService] Failed to fetch consensus for {}", symbol, e);
         }
 
         // 3. Historical Prices (FMP primary)
@@ -149,8 +147,7 @@ public class MarketDataService {
             List<HistoricalPrice> history = getHistoricalPrices(symbol);
             result.setHistoricalPrices(history);
         } catch (Exception e) {
-            System.err.println("[MarketDataService] Failed to fetch historical prices for " + symbol + ":");
-            e.printStackTrace();
+            log.error("[MarketDataService] Failed to fetch historical prices for {}", symbol, e);
         }
 
         // 4. Quote (FMP primary -> Finnhub fallback -> Yahoo fallback)
@@ -158,8 +155,7 @@ public class MarketDataService {
             Quote quote = getQuote(symbol);
             result.setQuote(quote);
         } catch (Exception e) {
-            System.err.println("[MarketDataService] Failed to fetch quote for " + symbol + ":");
-            e.printStackTrace();
+            log.error("[MarketDataService] Failed to fetch quote for {}", symbol, e);
         }
 
         return result;
