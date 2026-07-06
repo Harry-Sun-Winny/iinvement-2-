@@ -328,14 +328,15 @@ export async function getMarketDetails(symbol: string): Promise<MarketDetailsRes
     }
   } catch {}
 
-  const [profile, history, valuation, income] = await Promise.all([
+  const [profile, history, valuation, income, yahooDetails] = await Promise.all([
     fetchLooseJson<any>(`/api/stock-profile?symbol=${encodeURIComponent(normalized)}`),
     fetchLooseJson<any>(`/api/stock-history?symbol=${encodeURIComponent(normalized)}&range=6M`),
     fetchLooseJson<any>(`/api/fmp?symbol=${encodeURIComponent(normalized)}&type=valuation`),
     fetchLooseJson<any>(`/api/fmp?symbol=${encodeURIComponent(normalized)}&type=income`),
+    fetchLooseJson<any>(`/api/yahoo-details?symbol=${encodeURIComponent(normalized)}`),
   ]);
 
-  if (!profile && !history && !valuation && !income) {
+  if (!profile && !history && !valuation && !income && !yahooDetails) {
     return null;
   }
 
@@ -352,26 +353,26 @@ export async function getMarketDetails(symbol: string): Promise<MarketDetailsRes
 
   return {
     historicalPrices,
-    name: profile?.name,
+    name: yahooDetails?.name || profile?.name,
     sector: profile?.sector,
     country: profile?.country,
     marketCap: typeof profile?.marketCap === "number" ? profile.marketCap : null,
     currency: profile?.currency,
     logo: profile?.logo,
-    pe: typeof valuation?.peRatio === "number" ? valuation.peRatio : null,
-    forwardPe: typeof valuation?.peRatio === "number" ? valuation.peRatio : null,
-    pb: typeof valuation?.pbRatio === "number" ? valuation.pbRatio : null,
-    ps: typeof valuation?.priceToSalesRatio === "number" ? valuation.priceToSalesRatio : null,
-    roe: null,
-    eps: null,
-    beta: null,
-    dividendYield: null,
-    annualDividend: null,
-    recommendation: null,
-    buyCount: null,
-    holdCount: null,
-    sellCount: null,
-    targetPrice: null,
+    pe: yahooDetails?.pe ?? (typeof valuation?.peRatio === "number" ? valuation.peRatio : null),
+    forwardPe: yahooDetails?.forwardPe ?? (typeof valuation?.peRatio === "number" ? valuation.peRatio : null),
+    pb: yahooDetails?.pb ?? (typeof valuation?.pbRatio === "number" ? valuation.pbRatio : null),
+    ps: yahooDetails?.ps ?? (typeof valuation?.priceToSalesRatio === "number" ? valuation.priceToSalesRatio : null),
+    roe: yahooDetails?.roe ?? null,
+    eps: yahooDetails?.eps ?? null,
+    beta: yahooDetails?.beta ?? null,
+    dividendYield: yahooDetails?.dividendYield ?? null,
+    annualDividend: yahooDetails?.annualDividend ?? null,
+    recommendation: yahooDetails?.recommendation ?? null,
+    buyCount: yahooDetails?.buyCount ?? null,
+    holdCount: yahooDetails?.holdCount ?? null,
+    sellCount: yahooDetails?.sellCount ?? null,
+    targetPrice: yahooDetails?.targetPrice ?? null,
   };
 }
 

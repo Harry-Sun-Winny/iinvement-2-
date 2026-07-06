@@ -9,10 +9,10 @@ export function ValuationTab({ holding, marketData }: { holding: HoldingExt, mar
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard label="P/E Ratio" value={formatNum(marketData?.pe)} />
         <MetricCard label="Forward P/E" value={formatNum(marketData?.forwardPe)} />
-        <MetricCard label="PEG Ratio" value="--" /> {/* FMP ratio TTm doesn't provide PEG by default */}
+        <MetricCard label="PEG Ratio" value={formatNum(marketData?.peg)} />
         <MetricCard label="P/B Ratio" value={formatNum(marketData?.pb)} />
         <MetricCard label="P/S Ratio" value={formatNum(marketData?.ps)} />
-        <MetricCard label="EV / EBITDA" value="--" /> 
+        <MetricCard label="EV / EBITDA" value={formatNum(marketData?.evEbitda)} />
         <MetricCard label="ROE" value={formatNum(marketData?.roe, "", "%")} />
         <MetricCard label="EPS (TTM)" value={formatNum(marketData?.eps, "$")} />
       </div>
