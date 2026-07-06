@@ -380,6 +380,7 @@ export default function LedgerPage() {
             transactions={transactions}
             dividendEvents={dividendEvents}
             onAddEvent={addDividendEvent}
+            baseCurrency={baseCurrency}
           />
         )}
 

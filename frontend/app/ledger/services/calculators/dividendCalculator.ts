@@ -1,5 +1,5 @@
 import { TransactionDTO, DividendEventDTO } from '../../../../types/ledger';
-import { calculateHoldings } from './portfolioEngine';
+import { calculateHoldings, getCurrencyConversionFactor } from './portfolioEngine';
 
 export interface CalculatedDividend {
   id: string;
@@ -34,7 +34,8 @@ export function getQuantityHeldAtDate(transactions: TransactionDTO[], symbol: st
  */
 export function calculateReceivedDividends(
   transactions: TransactionDTO[],
-  dividendEvents: DividendEventDTO[]
+  dividendEvents: DividendEventDTO[],
+  baseCurrency: string = 'VND'
 ): CalculatedDividend[] {
   const result: CalculatedDividend[] = [];
 
@@ -45,9 +46,14 @@ export function calculateReceivedDividends(
     
     // Only register if the user actually held shares at the record date
     if (sharesHeld > 0) {
-      const payout = event.type === 'CASH' 
+      let payout = event.type === 'CASH' 
         ? sharesHeld * event.dividendRate 
         : sharesHeld * event.dividendRate; // stock dividend represents quantity of shares
+
+      if (event.type === 'CASH') {
+        const factor = getCurrencyConversionFactor(event.symbol, baseCurrency);
+        payout = payout * factor;
+      }
 
       const isFuture = new Date(event.paymentDate).getTime() > Date.now();
 

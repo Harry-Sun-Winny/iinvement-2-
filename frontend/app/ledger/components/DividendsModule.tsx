@@ -9,9 +9,10 @@ interface DividendsModuleProps {
   transactions: TransactionDTO[];
   dividendEvents: DividendEventDTO[];
   onAddEvent: (event: Omit<DividendEventDTO, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'archived'>) => void;
+  baseCurrency?: string;
 }
 
-export default function DividendsModule({ transactions, dividendEvents, onAddEvent }: DividendsModuleProps) {
+export default function DividendsModule({ transactions, dividendEvents, onAddEvent, baseCurrency = 'VND' }: DividendsModuleProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
     symbol: '',
@@ -32,8 +33,8 @@ export default function DividendsModule({ transactions, dividendEvents, onAddEve
 
   // Process received dividends dynamically
   const receivedDividends = useMemo(() => {
-    return calculateReceivedDividends(transactions, dividendEvents);
-  }, [transactions, dividendEvents]);
+    return calculateReceivedDividends(transactions, dividendEvents, baseCurrency);
+  }, [transactions, dividendEvents, baseCurrency]);
 
   // Filters application
   const filteredDividends = useMemo(() => {
@@ -119,7 +120,11 @@ export default function DividendsModule({ transactions, dividendEvents, onAddEve
         <div className="antigravity-panel p-4 bg-white/[0.02] border border-white/5 flex items-center justify-between">
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tổng Cổ Tức Tiền Mặt Đã Nhận</p>
-            <h3 className="text-xl font-black text-emerald-400 mt-1">{totalCashReceived.toLocaleString()}đ</h3>
+            <h3 className="text-xl font-black text-emerald-400 mt-1">
+              {baseCurrency === 'USD' ? '$' : ''}
+              {totalCashReceived.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+              {baseCurrency !== 'USD' ? 'đ' : ''}
+            </h3>
           </div>
           <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg">
             <Coins size={18} />
@@ -255,7 +260,9 @@ export default function DividendsModule({ transactions, dividendEvents, onAddEve
                   <td className="py-3 px-4 text-slate-300">{div.paymentDate}</td>
                   <td className="py-3 px-4 text-slate-300">
                     {div.type === 'CASH' 
-                      ? `${div.rate.toLocaleString()}đ` 
+                      ? (['AAPL', 'APPLE', 'MSFT', 'SANTA', 'SAN', 'JPM', 'CAT', 'AMZN', 'ADI', 'NVDA', 'AVGO', 'SPCX', 'AMD', 'MU', 'LRCX', 'KLAC', 'PANW', 'TSM', 'AMAT', 'CRWD', 'PLTR', 'ARM', 'SNDK', 'TSLA', 'GOOG', 'BAC', 'LLY', 'MRVL'].includes(div.symbol.toUpperCase())
+                          ? `$${div.rate.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}` 
+                          : `${div.rate.toLocaleString()}đ`)
                       : `${(div.rate * 100).toFixed(0)}%`
                     }
                   </td>
@@ -269,7 +276,9 @@ export default function DividendsModule({ transactions, dividendEvents, onAddEve
                   <td className="py-3 px-4 text-right text-slate-300">{div.sharesHeldAtRecord.toLocaleString()} CP</td>
                   <td className="py-3 px-4 font-bold text-white text-right">
                     {div.type === 'CASH' 
-                      ? `${div.payout.toLocaleString()}đ` 
+                      ? (baseCurrency === 'USD'
+                          ? `$${div.payout.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+                          : `${div.payout.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}đ`)
                       : `${div.payout.toLocaleString()} CP`
                     }
                   </td>
