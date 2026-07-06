@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useMemo, useState, useEffect } from "react";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import {
   Area,
   Bar,
@@ -9,7 +10,6 @@ import {
   ComposedChart,
   Line,
   ReferenceLine,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -205,7 +205,7 @@ function StockChart({ data, loading, error }: StockChartProps) {
             </div>
             <div className="h-[420px]">
             {mounted && (
-              <ResponsiveContainer width="100%" height="100%">
+              <AutoSizedChart>
                 <ComposedChart data={chartData} margin={{ top: 10, right: 18, bottom: 20, left: 0 }}>
                   <defs>
                     <linearGradient id="priceFill" x1="0" x2="0" y1="0" y2="1">
@@ -264,7 +264,7 @@ function StockChart({ data, loading, error }: StockChartProps) {
                     }}
                   />
                 </ComposedChart>
-              </ResponsiveContainer>
+              </AutoSizedChart>
             )}
           </div>
           </div>

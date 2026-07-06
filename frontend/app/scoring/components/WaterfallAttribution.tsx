@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DashboardData } from "../../watchlist/[id]/lib/types";
@@ -8,7 +9,6 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
-  ResponsiveContainer,
 } from "recharts";
 
 interface WaterfallAttributionProps {
@@ -43,7 +43,7 @@ export default function WaterfallAttribution({ scores, weights, data }: Waterfal
       <CardContent className="grid md:grid-cols-2 gap-6 py-4">
         {/* Left Side: Dynamic Radar Chart */}
         <div className="flex flex-col justify-center items-center border border-white/5 bg-slate-950/40 rounded-xl p-4 min-h-[240px] h-[240px]">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+          <AutoSizedChart>
             <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
               <PolarGrid stroke="#1e293b" />
               <PolarAngleAxis dataKey="pillar" tick={{ fill: "#cbd5e1", fontSize: 11 }} />
@@ -56,7 +56,7 @@ export default function WaterfallAttribution({ scores, weights, data }: Waterfal
                 fillOpacity={0.25}
               />
             </RadarChart>
-          </ResponsiveContainer>
+          </AutoSizedChart>
         </div>
 
         {/* Right Side: Contribution details shell */}

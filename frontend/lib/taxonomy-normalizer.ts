@@ -105,16 +105,88 @@ const SECTOR_RULES = [
 
 // Explicit symbol overrides when metadata is completely missing or wrong
 const SYMBOL_SECTOR_OVERRIDES: Record<string, { sector: string; industry: string }> = {
-  // Add major ones, but rely on metadata normally
   "NVDA": { sector: GICS.IT, industry: "Semiconductors" },
   "AAPL": { sector: GICS.IT, industry: "Consumer Electronics" },
-  "MSFT": { sector: GICS.IT, industry: "Software - Infrastructure" },
-  "TSLA": { sector: GICS.CONSUMER_DISCRETIONARY, industry: "Auto Manufacturers" },
-  "JPM": { sector: GICS.FINANCIALS, industry: "Banks - Diversified" },
-  "XOM": { sector: GICS.ENERGY, industry: "Oil & Gas Integrated" },
-  "JNJ": { sector: GICS.HEALTH_CARE, industry: "Drug Manufacturers" },
-  "WMT": { sector: GICS.CONSUMER_STAPLES, industry: "Discount Stores" },
-  "SPCX": { sector: GICS.INDUSTRIALS, industry: "Aerospace & Defense" }
+  "MSFT": { sector: GICS.IT, industry: "Software" },
+  "TSLA": { sector: GICS.CONSUMER_DISCRETIONARY, industry: "Automakers" },
+  "JPM": { sector: GICS.FINANCIALS, industry: "Banks" },
+  "XOM": { sector: GICS.ENERGY, industry: "Oil & Gas" },
+  "JNJ": { sector: GICS.HEALTH_CARE, industry: "Pharmaceuticals" },
+  "WMT": { sector: GICS.CONSUMER_STAPLES, industry: "Retail" },
+  "SPCX": { sector: GICS.INDUSTRIALS, industry: "Aerospace & Defense" },
+  
+  // Custom user symbols
+  "TSM": { sector: GICS.IT, industry: "Semiconductors" },
+  "MU": { sector: GICS.IT, industry: "Semiconductors" },
+  "000660.KS": { sector: GICS.IT, industry: "Semiconductors" },
+  "LLY": { sector: GICS.HEALTH_CARE, industry: "Pharmaceuticals" },
+  "AMD": { sector: GICS.IT, industry: "Semiconductors" },
+  "ASML.AS": { sector: GICS.IT, industry: "Semiconductors" },
+  "AMAT": { sector: GICS.IT, industry: "Semiconductors" },
+  "LRCX": { sector: GICS.IT, industry: "Semiconductors" },
+  "CAT": { sector: GICS.INDUSTRIALS, industry: "Machinery" },
+  "AMZN": { sector: GICS.CONSUMER_DISCRETIONARY, industry: "E-Commerce" },
+  "AVGO": { sector: GICS.IT, industry: "Semiconductors" },
+  "KLAC": { sector: GICS.IT, industry: "Semiconductors" },
+  "PLTR": { sector: GICS.IT, industry: "Software" },
+  "MRVL": { sector: GICS.IT, industry: "Semiconductors" },
+  "2454.TW": { sector: GICS.IT, industry: "Semiconductors" },
+  "CRWD": { sector: GICS.IT, industry: "Software" },
+  "SANTA": { sector: GICS.FINANCIALS, industry: "Banks" },
+  "005930.KS": { sector: GICS.IT, industry: "Hardware" },
+  "ARM": { sector: GICS.IT, industry: "Semiconductors" },
+  "SNDK": { sector: GICS.IT, industry: "Hardware" },
+  "PANW": { sector: GICS.IT, industry: "Software" },
+  "0700.HK": { sector: GICS.COMMUNICATION_SERVICES, industry: "Internet Services" },
+  "GOOG": { sector: GICS.COMMUNICATION_SERVICES, industry: "Internet Services" },
+  "ADI": { sector: GICS.IT, industry: "Semiconductors" },
+  "MUFG": { sector: GICS.FINANCIALS, industry: "Banks" },
+  "9984.T": { sector: GICS.FINANCIALS, industry: "Financial Services" },
+  "SMFG": { sector: GICS.FINANCIALS, industry: "Banks" },
+  "6981.T": { sector: GICS.IT, industry: "Hardware" },
+  "6857.T": { sector: GICS.IT, industry: "Semiconductors" },
+  "9983.T": { sector: GICS.CONSUMER_DISCRETIONARY, industry: "Apparel & Accessories" },
+  "BAC": { sector: GICS.FINANCIALS, industry: "Banks" }
+};
+
+const SYMBOL_COUNTRY_OVERRIDES: Record<string, { country: string; countryCode: string; region: string }> = {
+  "MSFT": { country: "United States", countryCode: "US", region: "North America" },
+  "TSM": { country: "Taiwan", countryCode: "TW", region: "Asia Pacific" },
+  "TSLA": { country: "United States", countryCode: "US", region: "North America" },
+  "MU": { country: "United States", countryCode: "US", region: "North America" },
+  "000660.KS": { country: "South Korea", countryCode: "KR", region: "Asia Pacific" },
+  "LLY": { country: "United States", countryCode: "US", region: "North America" },
+  "AMD": { country: "United States", countryCode: "US", region: "North America" },
+  "ASML.AS": { country: "Netherlands", countryCode: "NL", region: "Europe" },
+  "AMAT": { country: "United States", countryCode: "US", region: "North America" },
+  "LRCX": { country: "United States", countryCode: "US", region: "North America" },
+  "CAT": { country: "United States", countryCode: "US", region: "North America" },
+  "NVDA": { country: "United States", countryCode: "US", region: "North America" },
+  "AMZN": { country: "United States", countryCode: "US", region: "North America" },
+  "AVGO": { country: "United States", countryCode: "US", region: "North America" },
+  "KLAC": { country: "United States", countryCode: "US", region: "North America" },
+  "PLTR": { country: "United States", countryCode: "US", region: "North America" },
+  "MRVL": { country: "United States", countryCode: "US", region: "North America" },
+  "2454.TW": { country: "Taiwan", countryCode: "TW", region: "Asia Pacific" },
+  "CRWD": { country: "United States", countryCode: "US", region: "North America" },
+  "JPM": { country: "United States", countryCode: "US", region: "North America" },
+  "SANTA": { country: "Spain", countryCode: "ES", region: "Europe" },
+  "SPCX": { country: "United States", countryCode: "US", region: "North America" },
+  "005930.KS": { country: "South Korea", countryCode: "KR", region: "Asia Pacific" },
+  "ARM": { country: "United Kingdom", countryCode: "GB", region: "Europe" },
+  "SNDK": { country: "United States", countryCode: "US", region: "North America" },
+  "PANW": { country: "United States", countryCode: "US", region: "North America" },
+  "0700.HK": { country: "China", countryCode: "CN", region: "Asia Pacific" },
+  "AAPL": { country: "United States", countryCode: "US", region: "North America" },
+  "GOOG": { country: "United States", countryCode: "US", region: "North America" },
+  "ADI": { country: "United States", countryCode: "US", region: "North America" },
+  "MUFG": { country: "Japan", countryCode: "JP", region: "Asia Pacific" },
+  "9984.T": { country: "Japan", countryCode: "JP", region: "Asia Pacific" },
+  "SMFG": { country: "Japan", countryCode: "JP", region: "Asia Pacific" },
+  "6981.T": { country: "Japan", countryCode: "JP", region: "Asia Pacific" },
+  "6857.T": { country: "Japan", countryCode: "JP", region: "Asia Pacific" },
+  "9983.T": { country: "Japan", countryCode: "JP", region: "Asia Pacific" },
+  "BAC": { country: "United States", countryCode: "US", region: "North America" }
 };
 
 // Country normalization
@@ -276,10 +348,21 @@ export function normalizeClassification(
   let countryCode = "UNK";
   let region = "Global";
 
-  if (COUNTRY_MAP[cleanCountry]) {
-    country = COUNTRY_MAP[cleanCountry].name;
-    countryCode = COUNTRY_MAP[cleanCountry].code;
-    region = COUNTRY_MAP[cleanCountry].region;
+  const cleanCountryUpper = cleanCountry.toUpperCase().trim();
+  const hasNoCountry = !cleanCountryUpper || cleanCountryUpper === "OTHER";
+
+  if (SYMBOL_COUNTRY_OVERRIDES[cleanSymbol]) {
+    country = SYMBOL_COUNTRY_OVERRIDES[cleanSymbol].country;
+    countryCode = SYMBOL_COUNTRY_OVERRIDES[cleanSymbol].countryCode;
+    region = SYMBOL_COUNTRY_OVERRIDES[cleanSymbol].region;
+  } else if (SYMBOL_COUNTRY_OVERRIDES[baseSymbol]) {
+    country = SYMBOL_COUNTRY_OVERRIDES[baseSymbol].country;
+    countryCode = SYMBOL_COUNTRY_OVERRIDES[baseSymbol].countryCode;
+    region = SYMBOL_COUNTRY_OVERRIDES[baseSymbol].region;
+  } else if (COUNTRY_MAP[cleanCountryUpper]) {
+    country = COUNTRY_MAP[cleanCountryUpper].name;
+    countryCode = COUNTRY_MAP[cleanCountryUpper].code;
+    region = COUNTRY_MAP[cleanCountryUpper].region;
   } else if (cleanSymbol.endsWith(".VN")) {
     country = "Vietnam";
     countryCode = "VN";
@@ -300,10 +383,12 @@ export function normalizeClassification(
     else if (cleanSymbol.endsWith(".AS")) { country = "Netherlands"; countryCode = "NL"; region = "Europe"; }
     else if (cleanSymbol.endsWith(".MC")) { country = "Spain"; countryCode = "ES"; region = "Europe"; }
     else if (cleanSymbol.endsWith(".AX")) { country = "Australia"; countryCode = "AU"; region = "Asia Pacific"; }
+    else if (cleanSymbol.endsWith(".TW")) { country = "Taiwan"; countryCode = "TW"; region = "Asia Pacific"; }
+    else if (cleanSymbol.endsWith(".HK")) { country = "China"; countryCode = "CN"; region = "Asia Pacific"; }
   }
 
   // Default to US if completely unknown and it's a standard short ticker (optional heuristic)
-  if (countryCode === "UNK" && /^[A-Z]{1,5}$/.test(cleanSymbol) && !cleanCountry && !cleanSymbol.includes(".")) {
+  if (countryCode === "UNK" && /^[A-Z]{1,5}$/.test(cleanSymbol) && hasNoCountry && !cleanSymbol.includes(".")) {
      country = "United States";
      countryCode = "US";
      region = "North America";

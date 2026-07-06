@@ -1,11 +1,11 @@
 import React, { memo, useMemo } from "react";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardData } from "../../watchlist/[id]/lib/types";
 import {
   CartesianGrid,
   Line,
   LineChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -44,7 +44,7 @@ function CatalystTimeline({ data }: CatalystTimelineProps) {
       <CardContent className="py-4">
         {data && points.length > 0 ? (
           <div className="h-[220px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <AutoSizedChart>
               <LineChart data={points} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis dataKey="date" stroke="#475569" fontSize={9} />
@@ -63,7 +63,7 @@ function CatalystTimeline({ data }: CatalystTimelineProps) {
                   activeDot={{ r: 6 }}
                 />
               </LineChart>
-            </ResponsiveContainer>
+            </AutoSizedChart>
           </div>
         ) : (
           <div className="flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-white/5 bg-slate-950/40 p-8">

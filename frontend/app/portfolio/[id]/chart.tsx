@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import { useTableTheme } from "../../lib/table-theme";
 import { motion } from "framer-motion";
-import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
 import { Activity, Banknote, BriefcaseBusiness, DollarSign, LineChart, Percent, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -406,7 +407,7 @@ export default function PortfolioChart({ transactions, currentPrices, currencyRa
                 Dang tai gia tri thuc cua danh muc...
               </div>
             ) : mounted && (
-              <ResponsiveContainer width="100%" height="100%">
+              <AutoSizedChart>
                 <AreaChart data={points} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
                   <defs>
                     <linearGradient id="portfolioValueGradient" x1="0" x2="0" y1="0" y2="1">
@@ -424,7 +425,7 @@ export default function PortfolioChart({ transactions, currentPrices, currencyRa
                   <Area type="monotone" dataKey="invested" name="Invested" stroke="#64748b" strokeWidth={1.5} fill="transparent" dot={false} isAnimationActive animationDuration={650} />
                   <Area type="monotone" dataKey="value" name="Portfolio Value" stroke="#38bdf8" strokeWidth={2.5} fill="url(#portfolioValueGradient)" dot={false} activeDot={{ r: 5 }} isAnimationActive animationDuration={750} />
                 </AreaChart>
-              </ResponsiveContainer>
+              </AutoSizedChart>
             )}
           </div>
 
@@ -444,14 +445,14 @@ export default function PortfolioChart({ transactions, currentPrices, currencyRa
           <CardContent className="grid gap-4 md:grid-cols-[220px_1fr]">
             <div className="h-[220px]">
               {mounted && (
-                <ResponsiveContainer width="100%" height="100%">
+                <AutoSizedChart>
                   <PieChart>
                     <Pie data={allocationData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={86}>
                       {allocationData.map((entry, index) => <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
                     </Pie>
                     <Tooltip content={<ChartTooltip valueFormatter={(value) => formatCompact(Number(value ?? 0))} />} />
                   </PieChart>
-                </ResponsiveContainer>
+                </AutoSizedChart>
               )}
             </div>
             <div className="space-y-3 self-center">
