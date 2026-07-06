@@ -117,8 +117,6 @@ export const useLedgerStore = create<LedgerState>()(
       setTransactions: (txs) => set({ transactions: txs }),
 
       clearMockData: () => set({
-        transactions: [],
-        bonds: [],
         dividendEvents: [],
         reports: [],
         journals: [],
