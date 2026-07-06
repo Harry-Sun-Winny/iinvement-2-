@@ -23,7 +23,7 @@ public class FinnhubMarketDataProvider implements MarketDataProvider {
 
     public FinnhubMarketDataProvider(
             RestTemplate restTemplate,
-            @Value("${finnhub.api.key:demo}") String apiKey) {
+            @Value("${finnhub.api.key:}") String apiKey) {
         this.restTemplate = restTemplate;
         this.apiKey = apiKey;
     }

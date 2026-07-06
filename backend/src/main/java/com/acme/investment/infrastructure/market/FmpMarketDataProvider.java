@@ -31,7 +31,7 @@ public class FmpMarketDataProvider implements MarketDataProvider {
 
     public FmpMarketDataProvider(
             RestTemplate restTemplate,
-            @Value("${fmp.api.key:demo}") String apiKey) {
+            @Value("${fmp.api.key:}") String apiKey) {
         this.restTemplate = restTemplate;
         this.apiKey = apiKey;
     }

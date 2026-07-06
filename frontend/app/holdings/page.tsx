@@ -44,12 +44,7 @@ function getDynamicColor(str: string): string {
   return `hsl(${hue}, 70%, 60%)`;
 }
 
-// Mock data
-const MOCK_DATA: Holding[] = [
-  { symbol: "AAPL", name: "Apple", quantity: 100, avgCost: 150, currentPrice: 175, marketValue: 17500, pnl: 2500, returnPct: 16.6, weight: 25, sector: "Tech", country: "United States" },
-  { symbol: "NVDA", name: "NVIDIA", quantity: 50, avgCost: 400, currentPrice: 800, marketValue: 40000, pnl: 20000, returnPct: 100, weight: 50, sector: "AI", country: "United States" },
-  { symbol: "TSM", name: "TSMC", quantity: 200, avgCost: 80, currentPrice: 140, marketValue: 28000, pnl: 12000, returnPct: 75, weight: 25, sector: "Semiconductors", country: "Taiwan" },
-];
+
 
 export interface HoldingExt extends Holding {
   canonical?: CanonicalClassification;
