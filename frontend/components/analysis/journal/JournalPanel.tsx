@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
-import { Download, FileText, Paperclip, Send, X } from "lucide-react";
+import { Download, FileText, Paperclip, Send, X, Search } from "lucide-react";
 import toast from "react-hot-toast";
 import { useJournal } from "@/hooks/useJournal";
 
@@ -25,6 +25,86 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const captureRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Search and Filter states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+
+  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter((entry) => {
+      if (selectedDate) {
+        const entryDateStr = format(new Date(entry.created_at), "yyyy-MM-dd");
+        if (entryDateStr !== selectedDate) return false;
+      }
+      return true;
+    });
+  }, [entries, selectedDate]);
+
+  const matchingEntries = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    return filteredEntries.filter((e) =>
+      e.content.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [filteredEntries, searchQuery]);
+
+  const scrollToEntry = (id: string) => {
+    setTimeout(() => {
+      const element = document.getElementById(`entry-${id}`);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 50);
+  };
+
+  const handleNextMatch = () => {
+    if (matchingEntries.length === 0) return;
+    const nextIdx = (currentMatchIndex + 1) % matchingEntries.length;
+    setCurrentMatchIndex(nextIdx);
+    scrollToEntry(matchingEntries[nextIdx].id);
+  };
+
+  const handlePrevMatch = () => {
+    if (matchingEntries.length === 0) return;
+    const prevIdx = (currentMatchIndex - 1 + matchingEntries.length) % matchingEntries.length;
+    setCurrentMatchIndex(prevIdx);
+    scrollToEntry(matchingEntries[prevIdx].id);
+  };
+
+  // Reset index when search query or date changes
+  useEffect(() => {
+    setCurrentMatchIndex(0);
+    if (matchingEntries.length > 0) {
+      scrollToEntry(matchingEntries[0].id);
+    }
+  }, [searchQuery, selectedDate, matchingEntries.length]);
+
+  const highlightText = (text: string, highlight: string, isEntryActive: boolean) => {
+    if (!highlight.trim()) return text;
+    const parts = text.split(new RegExp(`(${escapeRegExp(highlight)})`, "gi"));
+    return (
+      <>
+        {parts.map((part, i) =>
+          part.toLowerCase() === highlight.toLowerCase() ? (
+            <mark
+              key={i}
+              className={
+                isEntryActive
+                  ? "bg-amber-400 text-slate-950 font-bold px-0.5 rounded shadow-sm"
+                  : "bg-yellow-500/20 text-[#E7E9EE] px-0.5 rounded border border-yellow-500/30"
+              }
+            >
+              {part}
+            </mark>
+          ) : (
+            part
+          )
+        )}
+      </>
+    );
+  };
 
   const handleSaveAI = async () => {
     if (!aiResult) return;
@@ -94,82 +174,175 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
         )}
       </div>
 
+      {/* Search and Date Filter Toolbar */}
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[#1A2540] bg-[#101626] px-4 py-2 text-xs">
+        {/* Keyword Search */}
+        <div className="relative flex flex-1 min-w-[150px] items-center">
+          <Search size={12} className="absolute left-2.5 text-[#6B7FA3]" />
+          <input
+            type="text"
+            placeholder="Tìm kiếm từ khóa..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (e.shiftKey) {
+                  handlePrevMatch();
+                } else {
+                  handleNextMatch();
+                }
+              }
+            }}
+            className="w-full rounded border border-[#1A2540] bg-[#0D1528] py-1.5 pl-8 pr-16 text-xs text-[#E7E9EE] placeholder-[#6B7FA3] focus:border-blue-500 focus:outline-none"
+          />
+          {searchQuery && (
+            <div className="absolute right-2 flex items-center gap-1.5 text-[10px] text-[#6B7FA3]">
+              <span className="font-semibold text-blue-400">
+                {matchingEntries.length > 0 ? `${currentMatchIndex + 1}/${matchingEntries.length}` : "0/0"}
+              </span>
+              <div className="flex gap-1 border-l border-[#1A2540] pl-1.5">
+                <button
+                  onClick={handlePrevMatch}
+                  disabled={matchingEntries.length === 0}
+                  className="hover:text-[#E7E9EE] disabled:opacity-30 text-[9px]"
+                  title="Tìm ngược (Shift+Enter)"
+                >
+                  ▲
+                </button>
+                <button
+                  onClick={handleNextMatch}
+                  disabled={matchingEntries.length === 0}
+                  className="hover:text-[#E7E9EE] disabled:opacity-30 text-[9px]"
+                  title="Tìm tiếp (Enter)"
+                >
+                  ▼
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Date Filter */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[#6B7FA3]">Ngày:</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => {
+              setSelectedDate(e.target.value);
+            }}
+            className="rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-xs text-[#E7E9EE] focus:border-blue-500 focus:outline-none scheme-dark"
+          />
+        </div>
+
+        {/* Reset Filters */}
+        {(searchQuery || selectedDate) && (
+          <button
+            onClick={() => {
+              setSearchQuery("");
+              setSelectedDate("");
+            }}
+            className="rounded bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-400 hover:bg-rose-500/20 transition-colors"
+          >
+            Xóa bộ lọc
+          </button>
+        )}
+      </div>
+
       <div ref={captureRef} className="absolute -left-[9999px] top-0 w-[600px] bg-[#0D1528] p-6 text-xs text-[#E7E9EE] whitespace-pre-wrap">
         {aiResult}
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      <div className="flex-1 space-y-4 overflow-y-auto p-4 custom-scrollbar">
         {isLoading ? (
           <div className="mt-4 text-center text-xs text-[#6B7FA3]">Đang tải...</div>
-        ) : entries.length === 0 ? (
+        ) : filteredEntries.length === 0 ? (
           <div className="mt-10 text-center text-xs italic text-[#6B7FA3]">
-            Chưa có ghi chú nào...
+            {selectedDate ? "Không có ghi chú nào trong ngày này..." : "Chưa có ghi chú nào..."}
           </div>
         ) : (
-          entries.map((entry) => (
-            <div key={entry.id} className="rounded-lg border border-[#1A2540] bg-[#141B30] p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[10px] font-semibold uppercase text-blue-400">{entry.title}</span>
-                <span className="text-[10px] text-[#6B7FA3]">
-                  {format(new Date(entry.created_at), "dd/MM HH:mm")}
-                </span>
-              </div>
-              <p className="mb-2 whitespace-pre-wrap text-xs text-[#E7E9EE]">{entry.content}</p>
-              {entry.attachments && entry.attachments.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {entry.attachments.map((attachment) => {
-                    const attachmentUrl = attachment.public_url
-                      ? attachment.public_url.startsWith("http")
-                        ? attachment.public_url
-                        : `${apiBaseUrl}${attachment.public_url}`
-                      : undefined;
-                    const looksLikeImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(attachment.file_name);
-                    const isImage = attachmentUrl
-                      ? attachmentUrl.startsWith("data:image/") || looksLikeImage
-                      : false;
+          filteredEntries.map((entry) => {
+            const isMatching = searchQuery.trim() !== "" && entry.content.toLowerCase().includes(searchQuery.toLowerCase());
+            const isActiveMatch = isMatching && matchingEntries[currentMatchIndex]?.id === entry.id;
 
-                    return (
-                      <div key={attachment.id} className="relative group">
-                        {isImage && attachmentUrl ? (
-                          <img
-                            src={attachmentUrl}
-                            alt={attachment.file_name}
-                            className="max-h-[80px] max-w-[120px] cursor-pointer rounded border border-[#1A2540] object-cover transition-all hover:border-blue-500"
-                            onClick={() => {
-                              const w = window.open();
-                              if (w) {
-                                w.document.write(`<img src="${attachmentUrl}" style="max-width:100%; height:auto;" />`);
-                              }
-                            }}
-                            title="Nhấn để phóng to"
-                          />
-                        ) : attachmentUrl ? (
-                          <a
-                            href={attachmentUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex max-w-[150px] items-center gap-1 truncate rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-[10px] text-blue-400 hover:text-blue-300"
-                          >
-                            <Paperclip size={10} /> {attachment.file_name}
-                          </a>
-                        ) : (
-                          <div className="flex max-w-[180px] items-center gap-1 truncate rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-[10px] text-[#6B7FA3]">
-                            <Paperclip size={10} /> {attachment.file_name}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+            return (
+              <div
+                key={entry.id}
+                id={`entry-${entry.id}`}
+                className={`rounded-lg border bg-[#141B30] p-3 transition-all duration-300 ${
+                  isActiveMatch
+                    ? "border-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.35)] bg-[#1c243c]"
+                    : "border-[#1A2540] hover:border-[#2a3a60]"
+                }`}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase text-blue-400">{entry.title}</span>
+                  <span className="text-[10px] text-[#6B7FA3]">
+                    {format(new Date(entry.created_at), "dd/MM HH:mm")}
+                  </span>
                 </div>
-              ) : (
-                entry.attachment_count > 0 && (
-                  <div className="flex w-fit items-center gap-1 rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-[10px] text-[#6B7FA3]">
-                    <Paperclip size={10} /> Đính kèm: {entry.attachment_count} tệp
+                <p className="mb-2 whitespace-pre-wrap text-xs text-[#E7E9EE]">
+                  {highlightText(entry.content, searchQuery, isActiveMatch)}
+                </p>
+                {entry.attachments && entry.attachments.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {entry.attachments.map((attachment) => {
+                      const attachmentUrl = attachment.public_url
+                        ? attachment.public_url.startsWith("http")
+                          ? attachment.public_url
+                          : `${apiBaseUrl}${attachment.public_url}`
+                        : undefined;
+                      const looksLikeImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(attachment.file_name);
+                      const isImage = attachmentUrl
+                        ? attachmentUrl.startsWith("data:image/") || looksLikeImage
+                        : false;
+
+                      return (
+                        <div key={attachment.id} className="relative group">
+                          {isImage && attachmentUrl ? (
+                            <img
+                              src={attachmentUrl}
+                              alt={attachment.file_name}
+                              className="max-h-[80px] max-w-[120px] cursor-pointer rounded border border-[#1A2540] object-cover transition-all hover:border-blue-500"
+                              onClick={() => {
+                                const w = window.open();
+                                if (w) {
+                                  w.document.write(`<img src="${attachmentUrl}" style="max-width:100%; height:auto;" />`);
+                                }
+                              }}
+                              title="Nhấn để phóng to"
+                            />
+                          ) : attachmentUrl ? (
+                            <a
+                              href={attachmentUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex max-w-[150px] items-center gap-1 truncate rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-[10px] text-blue-400 hover:text-blue-300"
+                            >
+                              <Paperclip size={10} /> {attachment.file_name}
+                            </a>
+                          ) : (
+                            <div className="flex max-w-[180px] items-center gap-1 truncate rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-[10px] text-[#6B7FA3]">
+                              <Paperclip size={10} /> {attachment.file_name}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                )
-              )}
-            </div>
-          ))
+                ) : (
+                  entry.attachment_count > 0 && (
+                    <div className="flex w-fit items-center gap-1 rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-[10px] text-[#6B7FA3]">
+                      <Paperclip size={10} /> Đính kèm: {entry.attachment_count} tệp
+                    </div>
+                  )
+                )}
+              </div>
+            );
+          })
         )}
       </div>
 
