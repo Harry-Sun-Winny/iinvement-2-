@@ -34,7 +34,7 @@ function SortIcon({ active, direction }: { active: boolean; direction: SortDir }
 function PositionsTable(props: Props) {
   if (!props.positions.length) {
     return (
-      <div className="relative overflow-hidden rounded-[24px] border border-white/5 bg-gradient-to-b from-[#121625]/90 to-[#0b0c16]/95 p-12 text-center text-slate-400 shadow-[0_24px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+      <div className="app-panel relative overflow-hidden rounded-[24px] p-12 text-center text-slate-400 shadow-[0_24px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl">
         Portfolio này chưa có giao dịch nào hoạt động.
       </div>
     );
@@ -52,7 +52,7 @@ function PositionsTable(props: Props) {
   ];
 
   return (
-    <div className="relative overflow-hidden rounded-[24px] border border-white/5 bg-gradient-to-b from-[#121625]/90 to-[#0b0c16]/95 p-6 shadow-[0_24px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+    <div className="app-panel relative overflow-hidden rounded-[24px] p-6 shadow-[0_24px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl">
       {/* Subtle top indicator line */}
       <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-500/20 to-transparent" />
 

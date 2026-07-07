@@ -19,7 +19,7 @@ interface Props {
 
 function AnalysisControls(props: Props) {
   return (
-    <div className="relative overflow-hidden rounded-[24px] border border-white/5 bg-gradient-to-b from-[#121625]/90 to-[#0b0c16]/95 p-6 shadow-[0_24px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+    <div className="app-panel relative overflow-hidden rounded-[24px] p-6 shadow-[0_24px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl">
       {/* Subtle top indicator line */}
       <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-500/20 to-transparent" />
       
@@ -61,7 +61,7 @@ function AnalysisControls(props: Props) {
             <select
               value={props.selectedId}
               onChange={event => props.onPortfolioChange(event.target.value)}
-              className="w-full appearance-none rounded-xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm font-medium text-slate-200 transition-all duration-300 hover:border-white/20 hover:bg-slate-950/80 focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none"
+              className="app-input w-full appearance-none rounded-xl px-4 py-3 text-sm font-medium transition-all duration-300 hover:border-slate-400 focus:outline-none"
             >
               {props.portfolios.map(portfolio => (
                 <option key={portfolio.id} value={portfolio.id} className="bg-[#0b0c16] text-slate-300">
@@ -89,7 +89,7 @@ function AnalysisControls(props: Props) {
                 <select
                   value={props.selectedSymbol}
                   onChange={event => props.onSymbolChange(event.target.value)}
-                  className="w-full appearance-none rounded-xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm font-medium text-slate-200 transition-all duration-300 hover:border-white/20 hover:bg-slate-950/80 focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none"
+                  className="app-input w-full appearance-none rounded-xl px-4 py-3 text-sm font-medium transition-all duration-300 hover:border-slate-400 focus:outline-none"
                 >
                   {props.positions.map(position => (
                     <option key={position.symbol} value={position.symbol} className="bg-[#0b0c16] text-slate-300">
@@ -119,7 +119,7 @@ function AnalysisControls(props: Props) {
                 onChange={event => props.onQuestionChange(event.target.value)}
                 rows={3}
                 maxLength={600}
-                className="w-full resize-none rounded-xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm leading-relaxed text-slate-200 placeholder:text-slate-600 transition-all duration-300 hover:border-white/20 focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none focus:bg-slate-950/70"
+                className="app-input w-full resize-none rounded-xl px-4 py-3 text-sm leading-relaxed transition-all duration-300 hover:border-slate-400 focus:outline-none"
                 placeholder="Ví dụ: Phân tích catalyst và rủi ro chính của mã này..."
               />
             </div>
