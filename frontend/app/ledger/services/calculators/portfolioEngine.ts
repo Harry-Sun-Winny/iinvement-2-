@@ -24,7 +24,7 @@ export function getCurrencyConversionFactor(symbol: string, baseCurrency: string
   const normSymbol = symbol.trim().toUpperCase();
   
   const isVnStock = /^[A-Z]{3}$/.test(normSymbol)
-    ? !['AMD', 'BAC', 'CAT', 'LLY', 'LTY', 'JPM', 'SAN', 'TSM', 'ARM'].includes(normSymbol)
+    ? !['AMD', 'BAC', 'CAT', 'LLY', 'LTY', 'JPM', 'SAN', 'TSM', 'ARM', 'JNJ', 'AZN', 'NVS', 'MRK', 'ADI', 'TXN'].includes(normSymbol)
     : normSymbol.endsWith('.VN');
     
   const isUsdStock = !isVnStock;

@@ -259,8 +259,9 @@ public class PortfolioSnapshotBackfillService {
                 }
 
                 // Calculate values using daily price
-                BigDecimal totalValue = cash;
-                BigDecimal totalCost = cash;
+                BigDecimal cashPositive = cash.compareTo(BigDecimal.ZERO) > 0 ? cash : BigDecimal.ZERO;
+                BigDecimal totalValue = cashPositive;
+                BigDecimal totalCost = cashPositive;
 
                 for (Map.Entry<String, BigDecimal> entry : holdingsQty.entrySet()) {
                     String sym = entry.getKey();
