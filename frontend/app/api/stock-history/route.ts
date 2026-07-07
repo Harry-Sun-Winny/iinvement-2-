@@ -5,6 +5,8 @@ const yahooFinance = new YahooFinanceClass();
 
 const USER_AGENT = "Mozilla/5.0 InvestmentPlatform/0.1";
 const RANGE_MAP: Record<string, string> = {
+  "1W": "1mo",
+  "1w": "1mo",
   "1M": "1mo",
   "3M": "3mo",
   "6M": "6mo",
@@ -13,6 +15,8 @@ const RANGE_MAP: Record<string, string> = {
   "3Y": "3y",
   "5Y": "5y",
   Max: "max",
+  All: "max",
+  ALL: "max",
 };
 
 const SYMBOL_ALIASES: Record<string, string> = {

@@ -382,17 +382,25 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
 
     const firstPortVal = filteredSnapshots[0].portfolioValue ?? 0;
     
-    // Find matching date benchmark price
+    // Normalize Benchmark prices with portfolio starting value using forward-filling
     const normalizedBenchmarkMap: Record<string, number> = {};
     if (benchmarkPrices.length > 0) {
-      // Find starting benchmark price matching first snapshot date
+      const sortedBenchmark = [...benchmarkPrices].sort((a, b) => a.date.localeCompare(b.date));
+      
       const startSnapDate = filteredSnapshots[0].snapshotDate;
-      const startBenchPoint = benchmarkPrices.find(p => p.date >= startSnapDate) || benchmarkPrices[0];
+      const startBenchPoint = sortedBenchmark.find(p => p.date >= startSnapDate) || sortedBenchmark[0];
       const startBenchPrice = startBenchPoint ? startBenchPoint.close : 0;
 
       if (startBenchPrice > 0) {
-        benchmarkPrices.forEach(p => {
-          normalizedBenchmarkMap[p.date] = p.close * (firstPortVal / startBenchPrice);
+        let lastKnownPrice = sortedBenchmark[0].close;
+        let bIdx = 0;
+        
+        filteredSnapshots.forEach(s => {
+          while (bIdx < sortedBenchmark.length && sortedBenchmark[bIdx].date <= s.snapshotDate) {
+            lastKnownPrice = sortedBenchmark[bIdx].close;
+            bIdx++;
+          }
+          normalizedBenchmarkMap[s.snapshotDate] = lastKnownPrice * (firstPortVal / startBenchPrice);
         });
       }
     }
@@ -406,7 +414,7 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
         date: s.snapshotDate,
         value: currVal,
         cost: s.investedAmount ?? 0,
-        benchmark: normalizedBenchmarkMap[s.snapshotDate] || null,
+        benchmark: normalizedBenchmarkMap[s.snapshotDate] ?? null,
         dailyReturn: dailyChange
       };
     });
