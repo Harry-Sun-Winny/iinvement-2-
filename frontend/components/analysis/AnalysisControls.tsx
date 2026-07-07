@@ -19,33 +19,113 @@ interface Props {
 
 function AnalysisControls(props: Props) {
   return (
-    <div className="app-panel mb-7 p-5">
-      <label className="mb-2 block text-xs font-bold text-[#54a0ff]">Chọn portfolio</label>
-      <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-slate-950/60 p-1" role="tablist" aria-label="Analysis mode">
-        {(["stock", "portfolio"] as AnalysisMode[]).map(mode => (
-          <button key={mode} type="button" role="tab" aria-selected={props.mode === mode} onClick={() => props.onModeChange(mode)} className={`rounded-md px-3 py-2 text-sm font-bold transition-colors ${props.mode === mode ? "bg-[#54a0ff] text-slate-950" : "text-slate-400 hover:bg-white/5"}`}>
-            {mode === "stock" ? "Single Stock" : "Portfolio Risk"}
-          </button>
-        ))}
-      </div>
-      <select value={props.selectedId} onChange={event => props.onPortfolioChange(event.target.value)} className="app-input w-full rounded-lg px-4 py-3 text-sm font-semibold">
-        {props.portfolios.map(portfolio => <option key={portfolio.id} value={portfolio.id}>{portfolio.name}</option>)}
-      </select>
-      {props.mode === "stock" && props.positions.length > 0 && (
-        <div className="mt-4 grid gap-4">
-          <div>
-            <label className="mb-2 block text-xs font-bold text-[#54a0ff]">Chọn cổ phiếu</label>
-            <select value={props.selectedSymbol} onChange={event => props.onSymbolChange(event.target.value)} className="app-input w-full rounded-lg px-4 py-3 text-sm font-semibold">
-              {props.positions.map(position => <option key={position.symbol} value={position.symbol}>{position.symbol} · {position.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-xs font-bold text-[#54a0ff]">Yêu cầu dành cho AI Analyst</label>
-            <textarea value={props.question} onChange={event => props.onQuestionChange(event.target.value)} rows={3} maxLength={600} className="app-input w-full resize-y rounded-lg px-4 py-3 text-sm leading-relaxed" placeholder="Ví dụ: Phân tích catalyst và rủi ro của NVDA..." />
-            <p className="mt-1 text-right text-xs text-slate-500">{props.question.length}/600</p>
+    <div className="relative overflow-hidden rounded-[24px] border border-white/5 bg-gradient-to-b from-[#121625]/90 to-[#0b0c16]/95 p-6 shadow-[0_24px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+      {/* Subtle top indicator line */}
+      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-500/20 to-transparent" />
+      
+      <div className="space-y-5">
+        {/* Selection mode tab control */}
+        <div>
+          <label className="mb-2.5 block text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">
+            Chế độ phân tích
+          </label>
+          <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-950/60 p-1 border border-white/5" role="tablist" aria-label="Analysis mode">
+            {(["stock", "portfolio"] as AnalysisMode[]).map(mode => {
+              const isActive = props.mode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => props.onModeChange(mode)}
+                  className={`rounded-lg py-2.5 text-xs font-bold transition-all duration-300 ${
+                    isActive
+                      ? "bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/20 shadow-[0_0_20px_rgba(34,211,238,0.08)]"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.02] border border-transparent"
+                  }`}
+                >
+                  {mode === "stock" ? "Single Stock" : "Portfolio Risk"}
+                </button>
+              );
+            })}
           </div>
         </div>
-      )}
+
+        {/* Portfolio Select */}
+        <div>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">
+            Chọn danh mục
+          </label>
+          <div className="relative">
+            <select
+              value={props.selectedId}
+              onChange={event => props.onPortfolioChange(event.target.value)}
+              className="w-full appearance-none rounded-xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm font-medium text-slate-200 transition-all duration-300 hover:border-white/20 hover:bg-slate-950/80 focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none"
+            >
+              {props.portfolios.map(portfolio => (
+                <option key={portfolio.id} value={portfolio.id} className="bg-[#0b0c16] text-slate-300">
+                  {portfolio.name}
+                </option>
+              ))}
+            </select>
+            {/* Custom dropdown arrow */}
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-slate-500">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        {/* Conditional stock selection & prompt inputs */}
+        {props.mode === "stock" && props.positions.length > 0 && (
+          <div className="space-y-5 pt-1">
+            <div>
+              <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">
+                Chọn cổ phiếu phân tích
+              </label>
+              <div className="relative">
+                <select
+                  value={props.selectedSymbol}
+                  onChange={event => props.onSymbolChange(event.target.value)}
+                  className="w-full appearance-none rounded-xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm font-medium text-slate-200 transition-all duration-300 hover:border-white/20 hover:bg-slate-950/80 focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none"
+                >
+                  {props.positions.map(position => (
+                    <option key={position.symbol} value={position.symbol} className="bg-[#0b0c16] text-slate-300">
+                      {position.symbol} · {position.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-slate-500">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">
+                  Yêu cầu dành cho AI Analyst
+                </label>
+                <span className="text-[10px] font-semibold text-slate-600">
+                  {props.question.length}/600
+                </span>
+              </div>
+              <textarea
+                value={props.question}
+                onChange={event => props.onQuestionChange(event.target.value)}
+                rows={3}
+                maxLength={600}
+                className="w-full resize-none rounded-xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm leading-relaxed text-slate-200 placeholder:text-slate-600 transition-all duration-300 hover:border-white/20 focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none focus:bg-slate-950/70"
+                placeholder="Ví dụ: Phân tích catalyst và rủi ro chính của mã này..."
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

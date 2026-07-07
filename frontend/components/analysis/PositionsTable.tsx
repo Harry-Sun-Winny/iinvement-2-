@@ -25,57 +25,74 @@ interface Props {
 }
 
 function SortIcon({ active, direction }: { active: boolean; direction: SortDir }) {
-  if (!active) return <ArrowUpDown className="h-3 w-3 opacity-30" />;
+  if (!active) return <ArrowUpDown className="h-3 w-3 opacity-20" />;
   return direction === "asc"
-    ? <ArrowUp className="h-3 w-3 text-[#54a0ff]" />
-    : <ArrowDown className="h-3 w-3 text-[#54a0ff]" />;
+    ? <ArrowUp className="h-3 w-3 text-cyan-400" />
+    : <ArrowDown className="h-3 w-3 text-cyan-400" />;
 }
 
 function PositionsTable(props: Props) {
   if (!props.positions.length) {
-    return <div className="app-panel p-10 text-center text-slate-400">Portfolio này chưa có giao dịch nào.</div>;
+    return (
+      <div className="relative overflow-hidden rounded-[24px] border border-white/5 bg-gradient-to-b from-[#121625]/90 to-[#0b0c16]/95 p-12 text-center text-slate-400 shadow-[0_24px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+        Portfolio này chưa có giao dịch nào hoạt động.
+      </div>
+    );
   }
 
   const headings: { key: SortKey | "industry" | "country" | "journal"; label: string; align: string }[] = [
     { key: "symbol", label: "MÃ", align: "text-left" },
-    { key: "value", label: "GIÁ TRỊ", align: "text-right" },
+    { key: "value", label: "GIÁ TRỊ THỊ TRƯỜNG", align: "text-right" },
     { key: "pnl", label: "P&L", align: "text-right" },
     { key: "pnlPct", label: "LỢI NHUẬN", align: "text-right" },
-    { key: "weight", label: "TỶ TRỌNG", align: "text-right" },
-    { key: "industry", label: "NGÀNH", align: "text-left" },
+    { key: "weight", label: "TỶ TRỌNG DANH MỤC", align: "text-right" },
+    { key: "industry", label: "PHÂN KHÚC NGÀNH", align: "text-left" },
     { key: "country", label: "QUỐC GIA", align: "text-left" },
     { key: "journal", label: "NHẬT KÝ", align: "text-center" },
   ];
 
   return (
-    <div className="app-panel mb-7 p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="font-black rainbow-text">
-          Vị thế hiện tại
-          {props.loading && <span className="ml-2 text-xs font-normal text-slate-400">Đang tải giá...</span>}
-        </h3>
+    <div className="relative overflow-hidden rounded-[24px] border border-white/5 bg-gradient-to-b from-[#121625]/90 to-[#0b0c16]/95 p-6 shadow-[0_24px_50px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+      {/* Subtle top indicator line */}
+      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-500/20 to-transparent" />
+
+      {/* Header section with styling and actions */}
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-bold uppercase tracking-[0.25em] text-white">
+            Vị thế hiện tại
+          </h3>
+          {props.loading && (
+            <p className="mt-1 text-xs text-slate-500 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 animate-ping rounded-full bg-cyan-400" />
+              Đang làm mới dữ liệu giá thị trường...
+            </p>
+          )}
+        </div>
         <button
           onClick={props.onRefresh}
-          className="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white hover:bg-slate-700"
+          disabled={props.loading}
+          className="inline-flex items-center gap-2 rounded-xl border border-white/5 bg-slate-950/60 px-4 py-2.5 text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-900 transition-all duration-300 active:scale-95 disabled:opacity-50"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${props.loading ? "animate-spin" : ""}`} />
-          Refresh
+          Làm mới
         </button>
       </div>
 
+      {/* Modern, high-end table representation */}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="border-b border-slate-700 text-xs text-slate-500">
+            <tr className="border-b border-white/5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               {headings.map((heading) => (
-                <th key={heading.key} className={`px-2 pb-2 ${heading.align}`}>
+                <th key={heading.key} className={`px-4 pb-3.5 ${heading.align}`}>
                   <button
                     onClick={() => {
                       if (heading.key !== "industry" && heading.key !== "country" && heading.key !== "journal") {
                         props.onSort(heading.key);
                       }
                     }}
-                    className="inline-flex items-center gap-1 hover:text-[#54a0ff] disabled:pointer-events-none disabled:hover:text-slate-500"
+                    className="inline-flex items-center gap-1.5 hover:text-cyan-400 transition-colors disabled:pointer-events-none disabled:hover:text-slate-500"
                     disabled={heading.key === "industry" || heading.key === "country" || heading.key === "journal"}
                   >
                     {heading.label}
@@ -87,7 +104,7 @@ function PositionsTable(props: Props) {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-white/5">
             {props.derived.sortedPositions.map((position) => {
               const quote = props.prices[position.symbol];
               const weight = position.priced && props.derived.totalValue
@@ -98,66 +115,91 @@ function PositionsTable(props: Props) {
               const country = getCountry(position.symbol);
 
               return (
-                <tr key={position.symbol} className="group transition-colors hover:bg-slate-800/50">
-                  <td className="px-2 py-3 text-left">
-                    <div className="flex items-center gap-2">
-                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-800 text-xs font-black text-[#54a0ff]">
+                <tr key={position.symbol} className="group transition-all duration-200 odd:bg-white/[0.005] hover:bg-white/[0.02]">
+                  {/* Symbol details */}
+                  <td className="px-4 py-4 text-left">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-950/60 border border-white/5 text-xs font-black text-cyan-400 shadow-inner group-hover:border-cyan-500/20 group-hover:text-cyan-300 transition-all duration-300">
                         {position.symbol.slice(0, 2)}
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate font-black text-[#54a0ff]">{position.symbol}</p>
-                        <p className="max-w-[120px] truncate text-[10px] text-slate-400">{position.name}</p>
-                        <p className="min-w-[120px] whitespace-normal break-words text-[10px] text-slate-500">
-                          {position.quantity} cp · ${formatNumber(position.avgPrice)}
+                        <p className="font-extrabold text-slate-100 group-hover:text-cyan-300 transition-colors">{position.symbol}</p>
+                        <p className="max-w-[140px] truncate text-[10px] font-semibold text-slate-400 mt-0.5">{position.name}</p>
+                        <p className="min-w-[140px] text-[10px] text-slate-500 mt-0.5 font-medium">
+                          {position.quantity.toLocaleString()} cp · ${formatNumber(position.avgPrice)}
                         </p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-2 py-3 text-right">
-                    <p className="font-bold text-white">
-                      {position.priced ? `$${formatNumber(position.value)}` : props.loading ? "Đang tải..." : "N/A"}
+
+                  {/* Market Value */}
+                  <td className="px-4 py-4 text-right">
+                    <p className="font-bold text-slate-200">
+                      {position.priced ? `$${formatNumber(position.value)}` : props.loading ? "..." : "N/A"}
                     </p>
                     {quote && (
-                      <>
-                        <p className="text-[10px] text-slate-400">${formatNumber(quote.price)}</p>
-                        <p className={`text-[10px] ${quote.change >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      <div className="mt-1 flex items-center justify-end gap-1.5 text-[10px] font-medium leading-none">
+                        <span className="text-slate-500">${formatNumber(quote.price)}</span>
+                        <span className={`h-1 w-1 rounded-full ${quote.change >= 0 ? "bg-emerald-500/30" : "bg-rose-500/30"}`} />
+                        <span className={quote.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
                           {quote.change >= 0 ? "+" : ""}
                           {quote.changePercent.toFixed(2)}%
-                        </p>
-                      </>
+                        </span>
+                      </div>
                     )}
                   </td>
-                  <td className={`px-2 py-3 text-right font-bold ${positive ? "text-green-400" : "text-red-400"}`}>
+
+                  {/* P&L */}
+                  <td className={`px-4 py-4 text-right font-semibold transition-all duration-300 ${positive ? "text-emerald-400" : "text-rose-400"}`}>
                     {position.priced ? `${position.pnl >= 0 ? "+" : ""}${formatNumber(position.pnl)}` : "N/A"}
                   </td>
-                  <td className="px-2 py-3 text-right">
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${positive ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
-                      {positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+
+                  {/* Returns Badge */}
+                  <td className="px-4 py-4 text-right">
+                    <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold border transition-all duration-300 ${
+                      positive 
+                        ? "bg-emerald-500/[0.04] border-emerald-500/20 text-emerald-400" 
+                        : "bg-rose-500/[0.04] border-rose-500/20 text-rose-400"
+                    }`}>
+                      {positive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
                       {position.priced ? formatPercent(position.pnlPct) : "N/A"}
                     </span>
                   </td>
-                  <td className="px-2 py-3 text-right">
-                    <p className="text-xs font-bold text-slate-300">
+
+                  {/* Portfolio Weight */}
+                  <td className="px-4 py-4 text-right">
+                    <p className="text-xs font-extrabold text-slate-300">
                       {isFiniteNumber(weight) ? `${weight.toFixed(1)}%` : "N/A"}
                     </p>
-                    <div className="ml-auto mt-1 h-1 w-full max-w-[60px] rounded-full bg-slate-800">
-                      <div className="rainbow-bg h-1 rounded-full" style={{ width: `${weight ?? 0}%` }} />
-                    </div>
+                    {isFiniteNumber(weight) && (
+                      <div className="ml-auto mt-2 h-1 w-full max-w-[70px] rounded-full bg-slate-950/60 overflow-hidden border border-white/5">
+                        <div 
+                          className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full rounded-full shadow-[0_0_8px_rgba(34,211,238,0.5)]" 
+                          style={{ width: `${weight}%` }} 
+                        />
+                      </div>
+                    )}
                   </td>
-                  <td className="px-2 py-3 text-left text-xs text-slate-300">
+
+                  {/* Industry segment */}
+                  <td className="px-4 py-4 text-left text-xs font-semibold text-slate-400">
                     {INDUSTRY_LABEL[industry]}
                   </td>
-                  <td className="px-2 py-3 text-left text-xs text-slate-300">
+
+                  {/* Country */}
+                  <td className="px-4 py-4 text-left text-xs font-semibold text-slate-400">
                     {COUNTRY_LABEL[country]}
                   </td>
-                  <td className="px-2 py-3 text-center">
+
+                  {/* Journal notes count link */}
+                  <td className="px-4 py-4 text-center">
                     <button
                       onClick={() => props.onOpenJournal(position.symbol)}
                       title="Xem nhật ký"
-                      className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-700 hover:text-[#54a0ff]"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/5 bg-slate-950/40 px-2.5 py-1.5 text-xs font-bold text-slate-400 hover:text-cyan-400 hover:border-cyan-500/20 hover:bg-slate-950 transition-all duration-300"
                     >
                       <span aria-hidden="true">📘</span>{" "}
-                      <span className="text-xs font-bold text-blue-400">{props.symbolCounts[position.symbol] || "0"}</span>
+                      <span className="text-cyan-400/90">{props.symbolCounts[position.symbol] || "0"}</span>
                     </button>
                   </td>
                 </tr>
@@ -167,17 +209,21 @@ function PositionsTable(props: Props) {
         </table>
       </div>
 
-      <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-slate-700 pt-4">
-        <div className="text-sm text-slate-400">Tổng giá trị</div>
-        <div className="font-black rainbow-text">
-          {props.derived.totalValue != null ? `$${formatNumber(props.derived.totalValue)}` : "N/A"}
+      {/* Summary Footer Panel */}
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-white/5 pt-5 text-sm">
+        <div className="rounded-2xl bg-slate-950/30 border border-white/5 p-4 flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Tổng giá trị danh mục</span>
+          <span className="text-lg font-black text-white">
+            {props.derived.totalValue != null ? `$${formatNumber(props.derived.totalValue)}` : "N/A"}
+          </span>
         </div>
-        <div className="w-full" />
-        <div className="text-sm text-slate-400">Tổng P&amp;L</div>
-        <div className={`font-black ${isFiniteNumber(props.derived.totalPnl) && props.derived.totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-          {isFiniteNumber(props.derived.totalPnl)
-            ? `${props.derived.totalPnl >= 0 ? "+" : ""}${formatNumber(props.derived.totalPnl)} (${formatPercent(props.derived.totalPnlPct)})`
-            : "N/A"}
+        <div className="rounded-2xl bg-slate-950/30 border border-white/5 p-4 flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Tổng lợi nhuận (P&amp;L)</span>
+          <span className={`text-lg font-black ${isFiniteNumber(props.derived.totalPnl) && props.derived.totalPnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+            {isFiniteNumber(props.derived.totalPnl)
+              ? `${props.derived.totalPnl >= 0 ? "+" : ""}${formatNumber(props.derived.totalPnl)} (${formatPercent(props.derived.totalPnlPct)})`
+              : "N/A"}
+          </span>
         </div>
       </div>
     </div>
