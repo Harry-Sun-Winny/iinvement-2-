@@ -1,4 +1,4 @@
-import { getPortfolios, getStockPrice, getTransactions } from "@/app/lib/api";
+import { getPortfolios, getStockPrices, getTransactions } from "@/app/lib/api";
 import type { HistoryPoint, FundamentalPoint, NewsContext, StockData } from "@/types/analysis";
 
 async function getJson<T>(url: string, timeoutMs: number): Promise<T | null> {
@@ -14,8 +14,10 @@ export const marketService = {
   getPortfolios,
   getTransactions,
   async getPrices(symbols: string[]) {
-    const entries = await Promise.all(symbols.map(async symbol => [symbol, await getStockPrice(symbol)] as const));
-    return Object.fromEntries(entries.filter((entry): entry is readonly [string, StockData] => Boolean(entry[1])));
+    const prices = await getStockPrices(symbols);
+    return Object.fromEntries(
+      Object.entries(prices).filter((entry): entry is [string, StockData] => Boolean(entry[1])),
+    );
   },
   getHistory(symbol: string) {
     return getJson<{ points: HistoryPoint[]; fundamentals: FundamentalPoint[]; currency?: string }>(`/api/stock-history?symbol=${encodeURIComponent(symbol)}&range=1Y`, 10_000);

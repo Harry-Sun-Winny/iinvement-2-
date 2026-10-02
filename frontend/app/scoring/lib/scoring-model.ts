@@ -23,14 +23,11 @@ export type PillarDefinition = {
   branches: ScoreBranch[];
 };
 
-export const INDUSTRY_OPTIONS: IndustryOption[] = [
-  { id: "BIG_TECH", label: "Big Tech", note: "Ưu tiên PEG, tăng trưởng và chất lượng lợi nhuận." },
-  { id: "BANKING", label: "Ngân hàng & Tài chính", note: "Không dùng D/E như ngành thường; tập trung ROE, P/B, chất lượng tài sản." },
-  { id: "SEMICONDUCTOR", label: "Bán dẫn", note: "Biến động chu kỳ lớn, cần chú ý tăng trưởng và momentum." },
-  { id: "PHARMA", label: "Dược phẩm / Y tế", note: "Tách bạch Big Pharma và biotech đầu cơ khi chấm điểm." },
-  { id: "ENERGY", label: "Năng lượng", note: "Điểm chịu ảnh hưởng rõ bởi chu kỳ hàng hóa và D/E đảo chiều." },
-  { id: "RETAIL", label: "Bán lẻ / Tiêu dùng", note: "Theo dõi P/B, same-store sales và biên lợi nhuận." },
-];
+export const INDUSTRY_OPTIONS: IndustryOption[] = INDUSTRY_DECISION_PROFILES.map((profile) => ({
+  id: profile.id,
+  label: profile.label,
+  note: `${profile.thesisLens} ${profile.regimeNote}`,
+}));
 
 export const PILLAR_DEFINITIONS: PillarDefinition[] = [
   {
@@ -106,11 +103,11 @@ export function computeWeightedAverage(items: Array<{ score: number; weight: num
 }
 
 export function classifyScore(score: number) {
-  if (score >= 80) return { label: "Mua mạnh", tone: "buy" as const };
-  if (score >= 60) return { label: "Mua", tone: "buy" as const };
-  if (score >= 40) return { label: "Giữ / Theo dõi", tone: "hold" as const };
-  if (score >= 20) return { label: "Bán", tone: "sell" as const };
-  return { label: "Bán mạnh", tone: "sell" as const };
+  if (score >= 85) return { label: "Mua mạnh ngay", tone: "buy" as const };
+  if (score >= 70) return { label: "Mua thêm", tone: "buy" as const };
+  if (score >= 50) return { label: "Giữ", tone: "hold" as const };
+  if (score >= 30) return { label: "Giảm tỷ trọng", tone: "sell" as const };
+  return { label: "Bán ngay", tone: "sell" as const };
 }
 
 export function toFivePointScale(score: number) {
@@ -124,6 +121,8 @@ export function buildAutoPrompt(args: {
   verdictLabel: string;
   pillarScores: Record<PillarKey, number>;
   branchScores: Record<string, number>;
+  evidenceDossier?: string;
+  decisionContext?: string;
 }) {
   const pillarLines = PILLAR_DEFINITIONS.map((pillar) => {
     const branches = pillar.branches
@@ -132,11 +131,54 @@ export function buildAutoPrompt(args: {
     return `- ${pillar.label}: ${args.pillarScores[pillar.id].toFixed(1)}/100. ${branches}.`;
   }).join("\n");
 
+  const evidenceRules = [
+    args.decisionContext || "BỐI CẢNH SAU MUA: chưa xác định.",
+    "KHUNG 6 NHÁNH: vĩ mô 20%, tài sản cụ thể 25%, tâm lý & hành vi 15%, tài chính cá nhân/mục tiêu 15%, thị trường & kỹ thuật 15%, pháp lý-rủi ro-thông tin 10%. Chỉ ưu tiên yếu tố tác động cao × xác suất cao × có thể dự đoán; không cộng điểm cơ học các yếu tố trùng lặp.",
+    "HỒ SƠ CHỨNG CỨ NGƯỜI DÙNG CUNG CẤP:",
+    args.evidenceDossier || "Không có tài liệu người dùng cung cấp.",
+    "QUY TẮC: tách rõ [Dữ kiện] / [Suy luận] / [Thiếu dữ liệu]; nêu nguồn và kỳ dữ liệu khi có; không bịa số liệu; mọi kết luận phải có điều kiện đảo chiều.",
+    "BỔ SUNG ĐẦU RA: Bull/Base/Bear với điều kiện kích hoạt, chỉ báo theo dõi và điều kiện vô hiệu hóa; ma trận 3-5 yếu tố gồm Tác động | Xác suất | Khả năng dự đoán | Dữ kiện nguồn | Hành động theo điều kiện; khoảng trống dữ liệu cần bổ sung.",
+  ].join("\\n");
+
+  return [
+    "VAI TRÒ: Bạn là người chấm điểm đầu tư độc lập, không phải người bảo vệ một kết luận có sẵn.",
+    `ĐỐI TƯỢNG: ${args.symbol || "Mã đang xem"} · ngành ${args.industryLabel}.`,
+    "MỤC TIÊU: Chấm chất lượng thông tin và tín hiệu đầu tư trên thang 0–100. Đây không phải khuyến nghị mua/bán cá nhân.",
+    "",
+    "QUY TẮC BẮT BUỘC:",
+    "- Không dùng, không suy ngược và không neo theo điểm tổng hợp hoặc điểm nhánh đã có trong ứng dụng. Hãy tự chấm từ bằng chứng.",
+    "- Mỗi điểm phải có dữ kiện cụ thể, nguồn/URL hoặc tên tài liệu, và kỳ dữ liệu/ngày quan sát. Không có bằng chứng thì ghi INSUFFICIENT_DATA, không tự gán 60/100.",
+    "- Tách rõ [FACT] dữ kiện, [INFERENCE] suy luận và [GAP] dữ liệu còn thiếu. Không bịa số liệu, nguồn hoặc mức độ chắc chắn.",
+    "- Nếu dùng dữ liệu ngoài hồ sơ, nêu nguồn chính thống và ngày truy cập. Nếu không thể kiểm chứng trực tiếp, chỉ liệt kê dữ liệu cần tra cứu.",
+    "- Điểm không phải hành động: rủi ro pháp lý/gian lận hoặc dữ liệu không đủ có quyền trả NO-DECISION dù điểm tiềm năng cao.",
+    "",
+    "THANG ĐIỂM CHUNG: 0–24 = bằng chứng xấu/rủi ro nghiêm trọng; 25–49 = yếu; 50–69 = trung tính hoặc bằng chứng hỗn hợp; 70–84 = tốt, được nhiều dữ kiện xác nhận; 85–100 = rất mạnh, nhất quán và có lợi thế rõ. Không làm tròn để che khoảng trống dữ liệu.",
+    "",
+    "RUBRIC 4 TRỤ CỘT VÀ TRỌNG SỐ NHÁNH:",
+    PILLAR_DEFINITIONS.map((pillar) => `- ${pillar.label} (trọng số ${pillar.overallWeight}%): ${pillar.branches.map((branch) => `${branch.label} ${branch.weight}% [${branch.promptHint}]`).join("; ")}.`).join("\n"),
+    "",
+    "HỒ SƠ CHỨNG CỨ ĐƯỢC CUNG CẤP:",
+    args.evidenceDossier || "Không có tài liệu. Không được tạo điểm tổng hợp; hãy trả NO-DECISION và nêu bộ tài liệu tối thiểu cần có.",
+    "",
+    "ĐỊNH DẠNG ĐẦU RA BẮT BUỘC:",
+    "1. coverage: nguồn đã dùng, kỳ dữ liệu, tỷ lệ nhánh đủ chứng cứ và các GAP quan trọng.",
+    "2. Bảng từng nhánh: trụ cột | nhánh | trọng số | điểm hoặc INSUFFICIENT_DATA | FACT + nguồn/kỳ | INFERENCE | lý do chấm.",
+    "3. Chỉ khi tất cả nhánh trọng yếu có chứng cứ: tính điểm mỗi trụ cột theo trọng số nhánh, rồi tính quality_score theo trọng số 4 trụ cột. Nếu thiếu, ghi quality_score: NOT_CALCULATED — không thay bằng điểm giả định.",
+    "4. confidence 0–100 phải dựa trên độ phủ, độ mới và chất lượng nguồn; không trộn confidence vào quality_score.",
+    "5. 3 bull case, 3 bear case, bull/base/bear với điều kiện kích hoạt và điều kiện vô hiệu hóa.",
+    "6. decision_status: chỉ chọn ELIGIBLE_FOR_POLICY_REVIEW, WATCH_RESEARCH hoặc NO-DECISION; kèm rủi ro/hard-stop có thể chặn quyết định.",
+    "7. Kết thúc bằng next_evidence_to_collect: tối đa 5 tài liệu/chỉ số cần bổ sung, ưu tiên theo mức ảnh hưởng.",
+    "",
+    "Không nêu Mua/Bán/Bán mạnh. Policy Engine của hệ thống sẽ quyết định hành động sau khi nhận kết quả chấm độc lập này.",
+  ].join("\n");
+
+  /* Legacy anchored-score prompt kept only for source-history reference.
   return [
     `Hãy đóng vai AI analyst cấp senior và phân tích cổ phiếu ${args.symbol || "đang xem"} trong ngành ${args.industryLabel}.`,
     `Điểm tổng hợp hiện tại là ${args.totalScore.toFixed(1)}/100, xếp loại ${args.verdictLabel}.`,
     "Phân tích theo đúng 4 trụ cột đầu tư:",
     pillarLines,
+    evidenceRules,
     "Yêu cầu đầu ra:",
     "1. Nêu 3 luận điểm bull case và 3 bear case rõ ràng.",
     "2. Chỉ ra trụ cột nào đang mạnh nhất và yếu nhất, vì sao.",
@@ -144,4 +186,6 @@ export function buildAutoPrompt(args: {
     "4. Đưa ra hành động đề xuất: Mua mạnh / Mua / Giữ / Bán / Bán mạnh, kèm điều kiện để đổi view.",
     "5. Viết ngắn gọn, thực chiến, tránh nói chung chung.",
   ].join("\n");
+  */
 }
+import { INDUSTRY_DECISION_PROFILES } from "@/lib/industry-decision-profiles";

@@ -1,5 +1,6 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import YahooFinanceClass from "yahoo-finance2";
+import { marketRequestCache } from "../_lib/async-ttl-cache";
 const yahooFinance = new YahooFinanceClass();
 type NewsItem = {
   title: string;
@@ -18,13 +19,11 @@ type SymbolProfile = {
 };
 
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY?.trim() ?? "";
-
-// RSS feeds cho tá»«ng nguá»“n
-const RSS_SOURCES = [
-  { name: "Reuters", url: (_q: string) => `https://feeds.reuters.com/reuters/businessNews` },
-  { name: "CNBC", url: (_q: string) => `https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114` },
-  { name: "Bloomberg", url: (_q: string) => `https://feeds.bloomberg.com/markets/news.rss` },
-];
+const NEWS_TTL_MS = 5 * 60_000;
+const PROFILE_TTL_MS = 60 * 60_000;
+const NEWS_RESPONSE_HEADERS = {
+  "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=1800",
+};
 
 function getLogoUrl(website?: string) {
   if (!website) return "";
@@ -37,7 +36,8 @@ async function fetchFinnhubNews(symbol: string): Promise<NewsItem[]> {
   const to = new Date().toISOString().slice(0, 10);
   const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const res = await fetch(
-    `https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${from}&to=${to}&token=${FINNHUB_KEY}`
+    `https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${from}&to=${to}&token=${FINNHUB_KEY}`,
+    { next: { revalidate: 900 }, signal: AbortSignal.timeout(8000) },
   );
   if (!res.ok) throw new Error("Finnhub failed");
   const data = await res.json();
@@ -46,57 +46,28 @@ async function fetchFinnhubNews(symbol: string): Promise<NewsItem[]> {
     summary: n.summary || "",
     url: n.url,
     source: n.source || "Finnhub",
-    publishedAt: n.datetime ? new Date(n.datetime * 1000).toISOString() : new Date().toISOString(),
+    publishedAt: n.datetime ? new Date(n.datetime * 1000).toISOString() : "",
     symbol,
   }));
 }
 
-async function parseRSS(xml: string, sourceName: string, symbol: string) {
-  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 3);
-  return items.map(m => {
-    const content = m[1];
-    const title =
-      content.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] ??
-      content.match(/<title>(.*?)<\/title>/)?.[1] ?? "";
-    const url =
-      content.match(/<link>(.*?)<\/link>/)?.[1] ??
-      content.match(/<guid[^>]*>(.*?)<\/guid>/)?.[1] ?? "";
-    const pubDate = content.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] ?? "";
-    const desc =
-      content.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/)?.[1] ??
-      content.match(/<description>(.*?)<\/description>/)?.[1] ?? "";
-    return {
-      title: title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
-      summary: desc.replace(/<[^>]+>/g, "").slice(0, 200),
-      url,
-      source: sourceName,
-      publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
-      symbol,
-    };
-  }).filter(n => n.title && n.url);
-}
-
-async function fetchRSSNews(symbol: string): Promise<NewsItem[]> {
-  const results: NewsItem[] = [];
-  await Promise.all(RSS_SOURCES.map(async (src) => {
-    try {
-      const res = await fetch(src.url(symbol), {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        next: { revalidate: 1800 },
-      });
-      if (!res.ok) return;
-      const xml = await res.text();
-      const items = await parseRSS(xml, src.name, symbol);
-      results.push(...items);
-    } catch {}
-  }));
-  return results;
+async function fetchYahooNews(symbol: string): Promise<NewsItem[]> {
+  const data = await yahooFinance.search(symbol, { quotesCount: 5, newsCount: 8 });
+  return ((data as any).news ?? []).map((item: any) => ({
+    title: String(item.title ?? "").trim(),
+    summary: String(item.summary ?? "").trim(),
+    url: String(item.link ?? item.url ?? "").trim(),
+    source: String(item.publisher ?? "Yahoo Finance").trim(),
+    publishedAt: item.providerPublishTime ? new Date(item.providerPublishTime * 1000).toISOString() : "",
+    symbol,
+  })).filter((item: NewsItem) => item.title && item.url && item.publishedAt);
 }
 
 async function crawlPage(url: string): Promise<string> {
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
+      signal: AbortSignal.timeout(6000),
     });
     const html = await res.text();
     const paragraphs = [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)]
@@ -110,59 +81,68 @@ async function crawlPage(url: string): Promise<string> {
   }
 }
 
+async function loadNews(symbol: string, compact: boolean): Promise<NewsItem[]> {
+  let news: NewsItem[] = [];
+
+  try { news = await fetchFinnhubNews(symbol); } catch {}
+  if (news.length < 3) {
+    try { news = [...news, ...(await fetchYahooNews(symbol))]; } catch {}
+  }
+
+  if (news.length > 0 && !compact) {
+    const enriched = await Promise.all(news.slice(0, 5).map(async (item) => {
+      if (item.summary && item.summary.length > 100) return item;
+      const content = await crawlPage(item.url);
+      return { ...item, summary: content || item.summary };
+    }));
+    news = [...enriched, ...news.slice(5)];
+  }
+
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  news = news.filter((item) => {
+    const publishedAt = new Date(item.publishedAt).getTime();
+    return Number.isFinite(publishedAt) && publishedAt >= sevenDaysAgo;
+  });
+  news.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+  return Array.from(
+    new Map(news.map((item) => [item.url.replace(/[?#].*$/, ""), item])).values(),
+  ).slice(0, 8);
+}
+
 export async function GET(req: NextRequest) {
-  const symbol = req.nextUrl.searchParams.get("symbol");
+  const rawSymbol = req.nextUrl.searchParams.get("symbol");
   const withCrawl = req.nextUrl.searchParams.get("crawl") === "1";
   const compact = req.nextUrl.searchParams.get("compact") === "1";
 
-  if (!symbol) return NextResponse.json({ error: "No symbol" }, { status: 400 });
+  if (!rawSymbol) return NextResponse.json({ error: "No symbol" }, { status: 400 });
+  const normalizedSymbol = rawSymbol.trim().toUpperCase().replace(/[\s.,]+$/, "");
 
-  // Náº¿u crawl=1 â†’ tráº£ vá» profile data (tÃªn, logo, marketCap)
+  // Nếu crawl=1 → trả về profile data (tên, logo, marketCap)
   if (withCrawl) {
     try {
-      const data = await yahooFinance.quoteSummary(symbol, { modules: ['summaryProfile', 'price'] });
+      const data = await marketRequestCache.getOrCreate(
+        `news-profile:${normalizedSymbol}`,
+        PROFILE_TTL_MS,
+        () => yahooFinance.quoteSummary(normalizedSymbol, { modules: ['summaryProfile', 'price'] }),
+      );
       const price = data.price;
       const profile = data.summaryProfile;
       return NextResponse.json({
-        name: price?.longName ?? price?.shortName ?? symbol,
+        name: price?.longName ?? price?.shortName ?? normalizedSymbol,
         logo: getLogoUrl(profile?.website),
         marketCap: price?.marketCap ? Math.round(price.marketCap / 1_000_000) : 0,
         currency: price?.currency ?? "USD",
       } as SymbolProfile);
     } catch {
-      return NextResponse.json({ name: symbol, logo: "", marketCap: 0, currency: "USD" });
+      return NextResponse.json({ name: normalizedSymbol, logo: "", marketCap: 0, currency: "USD" });
     }
   }
 
-  // Máº·c Ä‘á»‹nh â†’ tráº£ vá» tin tá»©c
-  let news: any[] = [];
-
-  try {
-    news = await fetchFinnhubNews(symbol);
-  } catch {}
-
-  if (news.length < 3) {
-    try {
-      const rssNews = await fetchRSSNews(symbol);
-      news = [...news, ...rssNews];
-    } catch {}
-  }
-
-  // Crawl thÃªm ná»™i dung chi tiáº¿t náº¿u cáº§n
-  if (news.length > 0 && !compact) {
-    const enriched = await Promise.all(news.slice(0, 5).map(async (n) => {
-      if (n.summary && n.summary.length > 100) return n;
-      const content = await crawlPage(n.url);
-      return { ...n, summary: content || n.summary };
-    }));
-    news = [...enriched, ...news.slice(5)];
-  }
-
-  const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
-  news = news.filter((item) => {
-    const publishedAt = new Date(item.publishedAt).getTime();
-    return Number.isFinite(publishedAt) && publishedAt >= twelveHoursAgo;
-  });
-  news.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
-  return NextResponse.json(news.slice(0, 8));
+  const news = await marketRequestCache.getOrCreate(
+    `news:${normalizedSymbol}:${compact ? "compact" : "full"}`,
+    NEWS_TTL_MS,
+    () => loadNews(normalizedSymbol, compact),
+  );
+  return NextResponse.json(news, { headers: NEWS_RESPONSE_HEADERS });
 }

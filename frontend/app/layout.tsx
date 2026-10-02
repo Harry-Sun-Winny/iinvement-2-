@@ -1,11 +1,10 @@
 import "./styles.css";
 import type { ReactNode } from "react";
-import AiChat from "./components/AiChat";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import QueryProvider from "@/components/providers/QueryProvider";
-import CanvasEffects from "@/components/CanvasEffects";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import AppSidebar from "@/components/AppSidebar";
+import AppShell from "@/components/AppShell";
+import { I18nProvider } from "@/components/providers/I18nProvider";
 
 export const metadata = {
   title: "Investment Portfolio",
@@ -31,47 +30,35 @@ export default function RootLayout({
               (function() {
                 var theme = localStorage.getItem('app-theme') || 'oled-black';
                 document.body.classList.add('theme-' + theme);
+                // Suppress annoying Next.js Webpack HMR WebSocket connection Event error overlays
+                window.addEventListener('unhandledrejection', function(event) {
+                  if (event && (event.reason === undefined || event.reason === null || event.reason instanceof Event || String(event.reason) === '[object Event]')) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                  }
+                }, true);
+                window.addEventListener('error', function(event) {
+                  if (event && (event.error instanceof Event || String(event.error) === '[object Event]')) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                  }
+                }, true);
               })();
             `,
           }}
         />
         <QueryProvider>
           <TooltipProvider>
-            <ThemeProvider>
-              {/* Background Image Layer */}
-              <div 
-                className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat transition-all duration-300 pointer-events-none"
-                style={{ backgroundImage: "var(--bg-image)" }}
-                aria-hidden="true"
-              />
-              {/* Ambient Background Particles */}
-              <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-                <div className="absolute w-full h-full">
-                  {Array.from({ length: 15 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="antigravity-particle"
-                      style={{
-                        left: `${(i * 7) % 100}%`,
-                        animationDelay: `${i * -2.2}s`,
-                        animationDuration: `${15 + (i % 3) * 5}s`,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="flex h-screen w-screen overflow-hidden relative">
-                <AppSidebar />
-                <div className="ml-64 flex-1 h-full overflow-hidden relative flex">
+            <I18nProvider>
+              <ThemeProvider>
+                <AppShell>
                   {children}
-                </div>
-              </div>
-              <CanvasEffects />
-              <AiChat />
-            </ThemeProvider>
-          </TooltipProvider>
-        </QueryProvider>
-      </body>
-    </html>
-  );
+                </AppShell>
+              </ThemeProvider>
+          </I18nProvider>
+        </TooltipProvider>
+      </QueryProvider>
+    </body>
+  </html>
+);
 }

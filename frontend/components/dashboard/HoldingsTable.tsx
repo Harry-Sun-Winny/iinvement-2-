@@ -8,6 +8,8 @@ import {
   weightedScore,
 } from "@/lib/analysis-framework";
 import { CanonicalClassification } from "@/lib/taxonomy-normalizer";
+import { useTranslation } from "@/components/providers/I18nProvider";
+import { fmtCompactMoney, fmtQuantity, fmtCompactSignedMoney, fmtMoney } from "../../app/lib/finance/currency";
 
 export interface Holding {
   symbol: string;
@@ -24,22 +26,21 @@ export interface Holding {
   canonical?: CanonicalClassification;
   trendPoints?: number[];
   dayChangePct?: number;
+
+  // Display fields
+  avgCostDisplay?: number;
+  currentPriceDisplay?: number | null;
+  marketValueDisplay?: number | null;
+  pnlDisplay?: number | null;
 }
 
 interface Props {
   data: Holding[];
+  currency?: string;
 }
 
 type SortKey = "symbol" | "quantity" | "marketValue" | "pnl" | "returnPct" | "weight";
 type SortDirection = "asc" | "desc";
-
-function formatNumber(num: number) {
-  return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function formatCurrency(num: number) {
-  return `$${formatNumber(num)}`;
-}
 
 function formatPercent(num: number, digits = 2) {
   return `${num.toLocaleString("en-US", {
@@ -48,9 +49,9 @@ function formatPercent(num: number, digits = 2) {
   })}%`;
 }
 
-function renderSparkline(points?: number[]) {
+function renderSparkline(points?: number[], isVi?: boolean) {
   if (!points || points.length < 2) {
-    return <span className="text-[10px] text-slate-500">No trend</span>;
+    return <span className="text-[10px] text-slate-500">{isVi ? "Không có xu hướng" : "No trend"}</span>;
   }
 
   const min = Math.min(...points);
@@ -79,7 +80,10 @@ function renderSparkline(points?: number[]) {
   );
 }
 
-export function HoldingsTable({ data }: Props) {
+export function HoldingsTable({ data, currency = "USD" }: Props) {
+  const { language } = useTranslation();
+  const isVi = language === "vi";
+  const numberLocale = isVi ? "vi-VN" : "en-US";
   const { theme, setTheme, themes, textClass } = useTableTheme();
   const [sortKey, setSortKey] = useState<SortKey>("marketValue");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -103,8 +107,13 @@ export function HoldingsTable({ data }: Props) {
       totalScore,
     };
   }).sort((a, b) => {
-    const left = sortKey === "symbol" ? a.symbol : a[sortKey];
-    const right = sortKey === "symbol" ? b.symbol : b[sortKey];
+    const sortKeyMapped =
+      sortKey === "marketValue" ? "marketValueDisplay" :
+      sortKey === "pnl" ? "pnlDisplay" :
+      sortKey;
+
+    const left = sortKey === "symbol" ? a.symbol : (a as any)[sortKeyMapped] ?? (a as any)[sortKey];
+    const right = sortKey === "symbol" ? b.symbol : (b as any)[sortKeyMapped] ?? (b as any)[sortKey];
 
     const result = typeof left === "string" && typeof right === "string"
       ? left.localeCompare(right)
@@ -129,7 +138,7 @@ export function HoldingsTable({ data }: Props) {
   return (
     <div className="space-y-4">
       <div className="antigravity-panel flex flex-col gap-3 border-white/5 bg-white/[0.01] px-4 py-3 transition-all hover:bg-white/[0.02] md:flex-row md:items-center md:justify-between">
-        <span className="min-w-[120px] break-words whitespace-normal text-xs font-bold uppercase tracking-wider text-slate-400">MÃ u chá»§ Ä‘áº¡o cá»§a báº£ng:</span>
+        <span className="min-w-[120px] break-words whitespace-normal text-xs font-bold uppercase tracking-wider text-slate-400">{isVi ? "Màu chủ đạo của bảng:" : "Table Theme:"}</span>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           {themes.map((t) => (
             <button
@@ -151,41 +160,41 @@ export function HoldingsTable({ data }: Props) {
             <TableRow className="border-white/5 hover:bg-transparent">
               <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>
                 <button type="button" onClick={() => toggleSort("symbol")} className="inline-flex items-center gap-1">
-                  Symbol {sortIcon("symbol")}
+                  {isVi ? "Mã" : "Symbol"} {sortIcon("symbol")}
                 </button>
               </TableHead>
-              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>Name</TableHead>
+              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>{isVi ? "Tên" : "Name"}</TableHead>
               <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>
                 <button type="button" onClick={() => toggleSort("quantity")} className="inline-flex items-center gap-1">
-                  Qty {sortIcon("quantity")}
+                  {isVi ? "SL" : "Qty"} {sortIcon("quantity")}
                 </button>
               </TableHead>
-              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>Avg Cost</TableHead>
-              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>Current</TableHead>
+              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>{isVi ? "Giá vốn" : "Avg Cost"}</TableHead>
+              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>{isVi ? "Giá ht" : "Current"}</TableHead>
               <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>
                 <button type="button" onClick={() => toggleSort("marketValue")} className="inline-flex items-center gap-1">
-                  Market Value {sortIcon("marketValue")}
+                  {isVi ? "Giá trị" : "Market Value"} {sortIcon("marketValue")}
                 </button>
               </TableHead>
               <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>
                 <button type="button" onClick={() => toggleSort("pnl")} className="inline-flex items-center gap-1">
-                  P/L {sortIcon("pnl")}
+                  {isVi ? "Lãi/Lỗ" : "P/L"} {sortIcon("pnl")}
                 </button>
               </TableHead>
               <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>
                 <button type="button" onClick={() => toggleSort("returnPct")} className="inline-flex items-center gap-1">
-                  Return {sortIcon("returnPct")}
+                  {isVi ? "Tỷ suất" : "Return"} {sortIcon("returnPct")}
                 </button>
               </TableHead>
-              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>Trend</TableHead>
+              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>{isVi ? "Xu hướng" : "Trend"}</TableHead>
               <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>
                 <button type="button" onClick={() => toggleSort("weight")} className="inline-flex items-center gap-1">
-                  Weight {sortIcon("weight")}
+                  {isVi ? "Tỷ trọng" : "Weight"} {sortIcon("weight")}
                 </button>
               </TableHead>
-              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>NgÃ nh</TableHead>
-              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>Quá»‘c gia</TableHead>
-              <TableHead className={`text-right text-xs font-bold uppercase tracking-wider ${textClass}`}>Score</TableHead>
+              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>{isVi ? "Ngành" : "Sector"}</TableHead>
+              <TableHead className={`text-xs font-bold uppercase tracking-wider ${textClass}`}>{isVi ? "Quốc gia" : "Country"}</TableHead>
+              <TableHead className={`text-right text-xs font-bold uppercase tracking-wider ${textClass}`}>{isVi ? "Điểm" : "Score"}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -196,13 +205,13 @@ export function HoldingsTable({ data }: Props) {
                 >
                   <TableCell className={`font-mono ${idx < 5 ? "text-[15px] font-black text-white" : `font-bold ${textClass}`}`}>{h.symbol}</TableCell>
                   <TableCell className={idx < 5 ? "font-medium text-white" : textClass}>{h.name}</TableCell>
-                  <TableCell className={`text-right tabular-nums ${textClass}`}>{formatNumber(h.quantity)}</TableCell>
-                  <TableCell className={`text-right tabular-nums ${textClass}`}>{formatCurrency(h.avgCost)}</TableCell>
-                  <TableCell className={`text-right tabular-nums ${textClass}`}>{formatCurrency(h.currentPrice)}</TableCell>
-                  <TableCell className={`text-right tabular-nums ${idx < 5 ? "font-black text-white" : `font-medium ${textClass}`}`}>{formatCurrency(h.marketValue)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${textClass}`}><span title={fmtQuantity(h.quantity, numberLocale)}>{fmtQuantity(h.quantity, numberLocale)}</span></TableCell>
+                  <TableCell className={`text-right tabular-nums ${textClass}`}>{fmtMoney(h.avgCostDisplay ?? h.avgCost, currency)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${textClass}`}>{fmtMoney(h.currentPriceDisplay ?? h.currentPrice, currency)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${idx < 5 ? "font-black text-white" : `font-medium ${textClass}`}`}><span title={fmtMoney(h.marketValueDisplay ?? h.marketValue, currency)}>{fmtCompactMoney(h.marketValueDisplay ?? h.marketValue, currency, numberLocale)}</span></TableCell>
                   <TableCell className="text-right">
-                    <Badge variant={h.pnl >= 0 ? "default" : "destructive"} className={h.pnl >= 0 ? "bg-emerald-500/10 text-emerald-400" : ""}>
-                      {h.pnl >= 0 ? "+" : "-"}{formatCurrency(Math.abs(h.pnl))}
+                    <Badge variant={(h.pnlDisplay ?? h.pnl) >= 0 ? "default" : "destructive"} className={(h.pnlDisplay ?? h.pnl) >= 0 ? "bg-emerald-500/10 text-emerald-400" : ""}>
+                      {fmtCompactSignedMoney(h.pnlDisplay ?? h.pnl, currency, numberLocale)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
@@ -210,7 +219,7 @@ export function HoldingsTable({ data }: Props) {
                       {formatPercent(h.returnPct)}
                     </span>
                   </TableCell>
-                  <TableCell className="text-center">{renderSparkline(h.trendPoints)}</TableCell>
+                  <TableCell className="text-center">{renderSparkline(h.trendPoints, isVi)}</TableCell>
                   <TableCell className="min-w-[120px]">
                     <div className="flex items-center justify-end gap-3">
                       <div className="h-2.5 w-16 overflow-hidden rounded-full bg-white/8">

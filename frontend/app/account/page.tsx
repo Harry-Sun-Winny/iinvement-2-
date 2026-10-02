@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "@/components/providers/I18nProvider";
 import {
   AiConversation,
   getAiConversations,
@@ -41,6 +42,8 @@ const roadmapItems = [
 ];
 
 export default function AccountPage() {
+  const { language } = useTranslation();
+  const isVi = language === "vi";
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -63,8 +66,8 @@ export default function AccountPage() {
     }
     setEmail(readEmailFromJwt(token));
     setSessionStartedAt(new Date().toISOString());
-    setEmailOtpEnabled(localStorage.getItem("security.emailOtp") === "enabled");
-    setTotpEnabled(localStorage.getItem("security.totp") === "enabled");
+    setEmailOtpEnabled(false);
+    setTotpEnabled(false);
     loadAccountData();
   }, []);
 
@@ -160,9 +163,8 @@ export default function AccountPage() {
 
   return (
     <>
-
       <div className="flex flex-1 h-full overflow-hidden">
-      <main className="w-[800px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
+      <main className="w-[820px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
 
           {error && (
             <Alert variant="error">
@@ -173,7 +175,7 @@ export default function AccountPage() {
           {/* Profile Details Panel */}
           <div className="antigravity-panel antigravity-float-slow overflow-hidden">
             <div className="border-b border-white/5 p-6 bg-white/[0.01]">
-              <h2 className="text-sm font-bold text-white tracking-widest uppercase">Thông tin tài khoản</h2>
+              <h2 className="text-sm font-bold text-white tracking-widest uppercase">{isVi ? "Thông tin tài khoản" : "Account Information"}</h2>
             </div>
             <div className="p-6">
               <div className="overflow-x-auto">
@@ -181,18 +183,18 @@ export default function AccountPage() {
                   <tbody className="divide-y divide-white/5">
                     <tr className="hover:bg-white/[0.01]">
                       <td className="py-4 font-bold text-slate-400 uppercase tracking-wider w-1/3">Email Workspace</td>
-                      <td className="py-4 font-semibold text-white">{email || "Đọc từ JWT"}</td>
+                      <td className="py-4 font-semibold text-white">{email || (isVi ? "Đọc từ JWT" : "Read from JWT")}</td>
                     </tr>
                     <tr className="hover:bg-white/[0.01]">
-                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider">Họ tên</td>
-                      <td className="py-4 font-semibold text-slate-350">Người dùng hệ thống</td>
+                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider">{isVi ? "Họ tên" : "Full Name"}</td>
+                      <td className="py-4 font-semibold text-slate-350">{isVi ? "Người dùng hệ thống" : "System User"}</td>
                     </tr>
                     <tr className="hover:bg-white/[0.01]">
-                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider">Quốc gia / Múi giờ</td>
+                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider">{isVi ? "Quốc gia / Múi giờ" : "Country / Timezone"}</td>
                       <td className="py-4 font-semibold text-slate-350">VN · Asia/Saigon (GMT+7)</td>
                     </tr>
                     <tr className="hover:bg-white/[0.01]">
-                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider">Gói dịch vụ</td>
+                      <td className="py-4 font-bold text-slate-400 uppercase tracking-wider">{isVi ? "Gói dịch vụ" : "Subscription Plan"}</td>
                       <td className="py-4 font-semibold text-emerald-450"> Rainbow Standard (Free)</td>
                     </tr>
                   </tbody>
@@ -204,16 +206,16 @@ export default function AccountPage() {
           {/* Security Log Table Panel */}
           <div className="antigravity-panel antigravity-float-slow overflow-hidden">
             <div className="border-b border-white/5 p-6 bg-white/[0.01]">
-              <h2 className="text-sm font-bold text-white tracking-widest uppercase">Nhật ký hoạt động & bảo mật</h2>
+              <h2 className="text-sm font-bold text-white tracking-widest uppercase">{isVi ? "Nhật ký hoạt động & bảo mật" : "Activity & Security Log"}</h2>
             </div>
             <div className="p-6">
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left">
                   <thead>
                     <tr className="border-b border-white/5 pb-3 text-slate-400 font-bold uppercase tracking-wider">
-                      <th className="pb-3 w-1/3">Hoạt động</th>
-                      <th className="pb-3 w-1/3">Chi tiết</th>
-                      <th className="pb-3 text-right">Thời gian</th>
+                      <th className="pb-3 w-1/3">{isVi ? "Hoạt động" : "Activity"}</th>
+                      <th className="pb-3 w-1/3">{isVi ? "Chi tiết" : "Details"}</th>
+                      <th className="pb-3 text-right">{isVi ? "Thời gian" : "Time"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
@@ -222,7 +224,7 @@ export default function AccountPage() {
                         <td className="py-4 font-bold text-white uppercase tracking-wide">{event.action}</td>
                         <td className="py-4 text-slate-350">{event.detail}</td>
                         <td className="py-4 text-right text-slate-500 font-medium">
-                          {event.time ? new Date(event.time).toLocaleString("vi-VN") : "—"}
+                          {event.time ? new Date(event.time).toLocaleString(isVi ? "vi-VN" : "en-US") : "—"}
                         </td>
                       </tr>
                     ))}
@@ -250,8 +252,72 @@ export default function AccountPage() {
           </div>
 
         </main>
-      <div className="flex-1 h-full overflow-y-auto p-6 bg-transparent" />
-    </div>
+        
+        {/* Right Analytics Workspace */}
+        <div className="flex-1 h-full overflow-y-auto p-6 space-y-6 z-10">
+          {/* Workspace Statistics widgets */}
+          <div className="antigravity-panel p-5 space-y-4 bg-transparent">
+            <div className="border-b border-white/5 pb-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">{isVi ? "Thống kê không gian làm việc" : "Workspace Statistics"}</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3 text-center">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{isVi ? "Danh mục" : "Portfolios"}</p>
+                <p className="text-2xl font-black text-white mt-1">{portfolios.length}</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3 text-center">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{isVi ? "Theo dõi" : "Watchlists"}</p>
+                <p className="text-2xl font-black text-white mt-1">{watchlists.length}</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3 text-center">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{isVi ? "Mục tiêu" : "Goals"}</p>
+                <p className="text-2xl font-black text-white mt-1">{goals.length}</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3 text-center">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{isVi ? "Hội thoại AI" : "AI Conversations"}</p>
+                <p className="text-2xl font-black text-white mt-1">{aiConversations.length}</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3 text-center">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{isVi ? "Giao dịch" : "Transactions"}</p>
+                <p className="text-2xl font-black text-white mt-1">{transactions.length}</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3 text-center">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{isVi ? "Cảnh báo" : "Alerts"}</p>
+                <p className="text-2xl font-black text-white mt-1">{notifications.length}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* MFA / 2FA Security Health Card */}
+          <div className="antigravity-panel p-5 space-y-3 bg-transparent">
+            <div className="border-b border-white/5 pb-2.5">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">{isVi ? "Chỉ số bảo mật tài khoản" : "Account Security Score"}</h3>
+            </div>
+            
+            <div className="space-y-3 pt-1">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Email OTP:</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${emailOtpEnabled ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}>
+                  {isVi ? "CHƯA CẤU HÌNH SERVER" : "SERVER SETUP REQUIRED"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Authenticator TOTP:</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${totpEnabled ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}>
+                  {isVi ? "CHƯA CẤU HÌNH SERVER" : "SERVER SETUP REQUIRED"}
+                </span>
+              </div>
+              
+              <div className="border-t border-white/5 pt-3 flex items-center justify-between">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{isVi ? "Đánh giá chung:" : "Overall Rating:"}</span>
+                <span className={`text-xs font-black ${emailOtpEnabled && totpEnabled ? "text-emerald-400" : "text-amber-400"}`}>
+                  {isVi ? "Chưa thể đánh giá cho đến khi có MFA thật" : "Cannot be rated until real MFA is configured"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </>
   );
 }
@@ -305,7 +371,7 @@ function StatusRow({ label, status, ok = false }: { label: string; status: strin
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-slate-100">{label}</p>
-            <p className="mt-1 text-xs text-slate-500">{enabled && isTotp ? "Secret: INVEST-APP-2026" : detail}</p>
+            <p className="mt-1 text-xs text-slate-500">{enabled && isTotp ? "Cần xác minh từ máy chủ" : detail}</p>
           </div>
           <button
             disabled={isOAuth}
@@ -328,7 +394,7 @@ function StatusRow({ label, status, ok = false }: { label: string; status: strin
         </div>
         {(isEmailOtp || isTotp) && (
           <p className="mt-2 text-[11px] text-slate-500">
-            Trạng thái demo đang lưu localStorage. Production cần API verify và lưu ở backend.
+            Tính năng này chưa bảo vệ đăng nhập cho tới khi backend xác minh và lưu cấu hình MFA.
           </p>
         )}
       </div>

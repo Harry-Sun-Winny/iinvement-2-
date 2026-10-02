@@ -72,10 +72,11 @@ Moderators may read but not mutate user financial data.
 | Event | Default role |
 |-------|--------------|
 | Registration | `USER` |
-| Admin promotion | `ADMIN` (manual or admin API) |
+| First local administrator | `ADMIN` only through the one-time, environment-gated bootstrap process |
+| Admin promotion | `ADMIN` (existing admin API, when implemented) |
 | Premium subscription | `PREMIUM` (future billing integration) |
 
-Only `ADMIN` can change another user's role.
+Public registration can never choose a role. After bootstrap, only `ADMIN` can change another user's role. The bootstrap flag is an installation procedure, not a client-facing API.
 
 ## Future: Fine-Grained Permissions
 

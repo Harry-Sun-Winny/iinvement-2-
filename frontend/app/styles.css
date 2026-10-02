@@ -563,18 +563,23 @@ body {
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 5px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(84, 160, 255, 0.25);
-  border-radius: 3px;
+  background: rgba(84, 160, 255, 0.55);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(196, 77, 255, 0.4);
+  background: rgba(84, 160, 255, 0.85);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 /* ==========================================
@@ -637,8 +642,8 @@ body {
 /* Solid panel - premium dark workspace style */
 .antigravity-panel {
   background: var(--panel, #16131D) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  backdrop-filter: blur(16px) saturate(1.5) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.5) !important;
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08)) !important;
   border-radius: 14px !important;
   box-shadow: 
@@ -867,13 +872,165 @@ body.theme-cherry-carpet .antigravity-bg {
   background-size: cover !important;
 }
 
-/* Cherry theme panels - semi-transparent over photo background */
-body.theme-cherry-pagoda .antigravity-panel,
-body.theme-cherry-river .antigravity-panel,
-body.theme-cherry-castle .antigravity-panel,
-body.theme-cherry-garden .antigravity-panel,
-body.theme-cherry-carpet .antigravity-panel {
-  background: rgba(10, 14, 28, var(--panel-opacity, 0.72)) !important;
+/* 🌸 Tokyo Cherry 1 */
+body.theme-tokyo-cherry-1 {
+  background: linear-gradient(rgba(10, 5, 15, 0.55), rgba(10, 5, 15, 0.6)), url(/Hoa-Dao-Vector-0032.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 320) !important;
+  --card: rgba(15, 8, 20, 0.75) !important;
+}
+body.theme-tokyo-cherry-1 .antigravity-bg {
+  background: linear-gradient(rgba(10, 5, 15, 0.55), rgba(10, 5, 15, 0.6)), url(/Hoa-Dao-Vector-0032.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* 🌸 Tokyo Cherry 2 */
+body.theme-tokyo-cherry-2 {
+  background: linear-gradient(rgba(10, 5, 15, 0.55), rgba(10, 5, 15, 0.6)), url(/Hoa-Dao-Vector-0036.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 320) !important;
+  --card: rgba(15, 8, 20, 0.75) !important;
+}
+body.theme-tokyo-cherry-2 .antigravity-bg {
+  background: linear-gradient(rgba(10, 5, 15, 0.55), rgba(10, 5, 15, 0.6)), url(/Hoa-Dao-Vector-0036.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* ❄️ Tokyo Snow 1 */
+body.theme-tokyo-snow-1 {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-13.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-tokyo-snow-1 .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-13.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* ❄️ Tokyo Snow 2 */
+body.theme-tokyo-snow-2 {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-5.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-tokyo-snow-2 .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-5.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* ❄️ Tokyo Snow 3 */
+body.theme-tokyo-snow-3 {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-6.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-tokyo-snow-3 .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-6.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* ❄️ Tokyo Snow 4 */
+body.theme-tokyo-snow-4 {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-7.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-tokyo-snow-4 .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-7.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* ❄️ Tokyo Snow 5 */
+body.theme-tokyo-snow-5 {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-9.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-tokyo-snow-5 .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/tuyet-roi-dep-den-nghet-tho-o-tokyo-nhat-9.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* ❄️ Tokyo Snow Vector */
+body.theme-tokyo-snow-vector {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/vector-bong-tuyet-inkythuatso-4-18-09-02-53.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-tokyo-snow-vector .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/vector-bong-tuyet-inkythuatso-4-18-09-02-53.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* ❄️ Tokyo Snow Vector */
+body.theme-tokyo-snow-vector {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/vector-bong-tuyet-inkythuatso-4-18-09-02-53.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-tokyo-snow-vector .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/vector-bong-tuyet-inkythuatso-4-18-09-02-53.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* 🏔️ Japan Scene 1 */
+body.theme-japan-scene-1 {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/20-canh-dep-ly-giai-vi-sao-nhat-ban-luon-hut-du-khach-ivivu-14.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-japan-scene-1 .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/20-canh-dep-ly-giai-vi-sao-nhat-ban-luon-hut-du-khach-ivivu-14.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* 🏔️ Japan Scene 2 */
+body.theme-japan-scene-2 {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/20-canh-dep-ly-giai-vi-sao-nhat-ban-luon-hut-du-khach-ivivu-16.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-japan-scene-2 .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/20-canh-dep-ly-giai-vi-sao-nhat-ban-luon-hut-du-khach-ivivu-16.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* 🏔️ Japan Scene 3 */
+body.theme-japan-scene-3 {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/20-canh-dep-ly-giai-vi-sao-nhat-ban-luon-hut-du-khach-ivivu-17.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-japan-scene-3 .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/20-canh-dep-ly-giai-vi-sao-nhat-ban-luon-hut-du-khach-ivivu-17.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* 🏔️ Japan Scene 4 */
+body.theme-japan-scene-4 {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/20-canh-dep-ly-giai-vi-sao-nhat-ban-luon-hut-du-khach-ivivu-20.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+  --background: oklch(0.12 0.01 280) !important;
+  --card: rgba(12, 8, 25, 0.75) !important;
+}
+body.theme-japan-scene-4 .antigravity-bg {
+  background: linear-gradient(rgba(8, 5, 18, 0.55), rgba(8, 5, 18, 0.6)), url(/20-canh-dep-ly-giai-vi-sao-nhat-ban-luon-hut-du-khach-ivivu-20.jpg) no-repeat center center fixed !important;
+  background-size: cover !important;
+}
+
+/* Background Image Themes panels - semi-transparent */
+html.has-bg-image .antigravity-panel {
+  background: color-mix(in srgb, var(--panel, #16131D) calc(var(--panel-opacity, 0.72) * 100%), transparent) !important;
   backdrop-filter: blur(20px) saturate(1.5) !important;
   -webkit-backdrop-filter: blur(20px) saturate(1.5) !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
@@ -1156,3 +1313,156 @@ body.rainbow-text-active .text-slate-500 {
   0% { background-position: 0% 50%; }
   100% { background-position: 200% 50%; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   THEMATIC TABLES 
+   Force tables to respect the 72 themes variables, ignoring Tailwind overrides
+   ═══════════════════════════════════════════════════════════════════════════════ */
+table thead tr,
+table th, 
+table td,
+.Table thead tr,
+.Table th,
+.Table td {
+  border-color: var(--border, rgba(255, 255, 255, 0.08)) !important;
+}
+
+table tr, .Table tr {
+  border-bottom-color: var(--border, rgba(255, 255, 255, 0.08)) !important;
+}
+
+table tbody tr, .Table tbody tr {
+  background-color: transparent !important;
+}
+
+/* The table surface must use the user-selected table token.  Previously only
+   headers and sticky columns used --table, leaving the main body transparent. */
+table[data-slot="table"],
+.Table {
+  background: var(--table, var(--panel, #16131D)) !important;
+}
+
+table tbody tr:hover, .Table tbody tr:hover {
+  background-color: var(--accent-soft, rgba(255, 255, 255, 0.04)) !important;
+}
+
+table th.sticky, table td.sticky,
+.Table th.sticky, .Table td.sticky,
+table .sticky {
+  background-color: var(--table, #1A1622) !important;
+}
+
+table tbody tr:hover td.sticky,
+.Table tbody tr:hover td.sticky {
+  background-color: var(--accent-soft, rgba(255, 255, 255, 0.08)) !important;
+}
+
+table thead tr {
+  background-color: var(--card, #1C1825) !important;
+}
+
+/* Theme overrides for dynamic global text color */
+@theme inline {
+  --color-slate-50: var(--text-color);
+  --color-slate-100: var(--text-color);
+  --color-slate-200: color-mix(in srgb, var(--text-color) 90%, transparent);
+  --color-slate-300: color-mix(in srgb, var(--text-color) 80%, transparent);
+  --color-slate-400: color-mix(in srgb, var(--text-color) 65%, transparent);
+  --color-slate-500: color-mix(in srgb, var(--text-color) 50%, transparent);
+  
+  --color-zinc-50: var(--text-color);
+  --color-zinc-100: var(--text-color);
+  --color-zinc-200: color-mix(in srgb, var(--text-color) 90%, transparent);
+  --color-zinc-300: color-mix(in srgb, var(--text-color) 80%, transparent);
+  --color-zinc-400: color-mix(in srgb, var(--text-color) 65%, transparent);
+  --color-zinc-500: color-mix(in srgb, var(--text-color) 50%, transparent);
+
+  --color-gray-50: var(--text-color);
+  --color-gray-100: var(--text-color);
+  --color-gray-200: color-mix(in srgb, var(--text-color) 90%, transparent);
+  --color-gray-300: color-mix(in srgb, var(--text-color) 80%, transparent);
+  --color-gray-400: color-mix(in srgb, var(--text-color) 65%, transparent);
+  --color-gray-500: color-mix(in srgb, var(--text-color) 50%, transparent);
+}
+
+
+
+/* Explicit Text Color Overrides for global setting */
+.text-slate-50, .text-slate-100, .text-slate-200, .text-gray-50, .text-gray-100, .text-gray-200, .text-zinc-50, .text-zinc-100, .text-zinc-200 {
+  color: var(--text-color, #CBD5E1) !important;
+}
+.text-slate-300, .text-gray-300, .text-zinc-300 {
+  color: color-mix(in srgb, var(--text-color, #CBD5E1) 80%, transparent) !important;
+}
+.text-slate-400, .text-gray-400, .text-zinc-400 {
+  color: color-mix(in srgb, var(--text-color, #CBD5E1) 65%, transparent) !important;
+}
+.text-slate-500, .text-gray-500, .text-zinc-500 {
+  color: color-mix(in srgb, var(--text-color, #CBD5E1) 50%, transparent) !important;
+}
+
+/* Market Theme Animated Gradient */
+@keyframes gradShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+[data-market-theme$="-7color"] {
+  background-size: 300% 300% !important;
+  animation: gradShift 15s ease infinite !important;
+}
+
+
+
+/* Global animated background for 7-color themes */
+.theme-animated-bg .fixed.inset-0.z-0 {
+  background-size: 300% 300% !important;
+  animation: gradShift 15s ease infinite !important;
+}
+
+/* 7-Color Gradient Panel & Sidebar Utility */
+aside, .theme-panel-gradient, [data-panel-gradient="true"] {
+  background: var(--panel) !important;
+  background-size: 300% 300% !important;
+  animation: gradShift 18s ease infinite !important;
+}
+
+/* Workspace surface lock
+   The sidebar is the source of truth for the workspace colour.  Keep every
+   information surface in the centre and detail columns on that same token,
+   including pages that still carry older Tailwind background utilities. */
+:root {
+  --workspace-surface: var(--sidebar, var(--panel, #16131D));
+}
+
+.antigravity-panel,
+[data-slot="card"],
+[data-slot="table"],
+.Table,
+table[data-slot="table"] {
+  background: var(--workspace-surface) !important;
+}
+
+[data-slot="card-header"],
+[data-slot="card-footer"],
+table thead tr {
+  background-color: var(--workspace-surface) !important;
+}
+
+table th.sticky,
+table td.sticky,
+table .sticky {
+  background-color: var(--workspace-surface) !important;
+}
+
+/* Image and rainbow themes previously made these panels transparent.  Keep
+   their information surfaces identical to the sidebar instead. */
+html .antigravity-panel,
+html.has-bg-image .antigravity-panel,
+body.theme-rainbow .antigravity-panel {
+  background: var(--workspace-surface) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+

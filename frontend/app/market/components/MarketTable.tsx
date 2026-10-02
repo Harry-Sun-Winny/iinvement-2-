@@ -1,206 +1,189 @@
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { useTranslation } from "@/components/providers/I18nProvider";
 import MiniSparkline from "./MiniSparkline";
-
-interface MarketItem {
-  symbol: string;
-  name: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  changeRange: number | null;
-  changePctRange: number | null;
-  dataQuality?: {
-    status: "OK" | "WARN" | "ERROR";
-    checks: string[];
-    sources: string[];
-    unavailableSources: string[];
-    primarySource: string;
-    fallbackUsed: boolean;
-    maxDeviationPercent: number | null;
-  };
-}
+import { MarketAsset, MarketQuote } from "../types";
+import { formatAsOf, formatMoney, formatPercent, getDisplayChange, getDisplayChangePercent } from "../utils";
 
 interface MarketTableProps {
-  symbols: { symbol: string; name: string }[];
-  data: Record<string, MarketItem>;
+  symbols: MarketAsset[];
+  data: Record<string, MarketQuote>;
   activeRange: string;
+  selectedSymbol?: string | null;
+  onSelectSymbol?: (symbol: string) => void;
 }
 
-type SortKey = "symbol" | "price" | "changePercent";
+type SortKey = "symbol" | "price" | "change" | "changePct";
 
-export default function MarketTable({ symbols, data, activeRange }: MarketTableProps) {
-  const [colWidths, setColWidths] = useState({
-    name: 200,
-    price: 120,
-    change: 120,
-    changePct: 180,
-    quality: 150,
-  });
+export default function MarketTable({
+  symbols,
+  data,
+  activeRange,
+  selectedSymbol,
+  onSelectSymbol,
+}: MarketTableProps) {
+  const { language } = useTranslation();
+  const isVi = language === "vi";
+  const [sortKey, setSortKey] = useState<SortKey>("changePct");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  const [sortKey, setSortKey] = useState<SortKey>("symbol");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
-  function getChange(d: MarketItem) { return activeRange === "1d" ? d.change : (d.changeRange ?? null); }
-  function getChangePct(d: MarketItem) { return activeRange === "1d" ? d.changePercent : (d.changePctRange ?? null); }
-
-  const handleSort = (key: SortKey) => {
+  function handleSort(key: SortKey) {
     if (sortKey === key) {
-      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
+      setSortDir((current) => (current === "asc" ? "desc" : "asc"));
+      return;
     }
-  };
 
-  const sortedSymbols = useMemo(() => {
-    const list = [...symbols];
-    list.sort((a, b) => {
-      const itemA = data[a.symbol];
-      const itemB = data[b.symbol];
+    setSortKey(key);
+    setSortDir(key === "symbol" ? "asc" : "desc");
+  }
 
-      let valA: any = a.symbol;
-      let valB: any = b.symbol;
+  const rows = useMemo(() => {
+    const items = symbols.map((symbol) => {
+      const quote = data[symbol.symbol];
+      return {
+        asset: symbol,
+        quote,
+        displayChange: quote ? getDisplayChange(quote, activeRange) : null,
+        displayChangePct: quote ? getDisplayChangePercent(quote, activeRange) : null,
+      };
+    });
+
+    items.sort((a, b) => {
+      let aValue: string | number = a.asset.symbol;
+      let bValue: string | number = b.asset.symbol;
 
       if (sortKey === "price") {
-        valA = itemA ? itemA.price : 0;
-        valB = itemB ? itemB.price : 0;
-      } else if (sortKey === "changePercent") {
-        valA = itemA ? (getChangePct(itemA) ?? 0) : 0;
-        valB = itemB ? (getChangePct(itemB) ?? 0) : 0;
+        aValue = a.quote?.price ?? Number.NEGATIVE_INFINITY;
+        bValue = b.quote?.price ?? Number.NEGATIVE_INFINITY;
+      } else if (sortKey === "change") {
+        aValue = a.displayChange ?? Number.NEGATIVE_INFINITY;
+        bValue = b.displayChange ?? Number.NEGATIVE_INFINITY;
+      } else if (sortKey === "changePct") {
+        aValue = a.displayChangePct ?? Number.NEGATIVE_INFINITY;
+        bValue = b.displayChangePct ?? Number.NEGATIVE_INFINITY;
       }
 
-      if (valA < valB) return sortDir === "asc" ? -1 : 1;
-      if (valA > valB) return sortDir === "asc" ? 1 : -1;
+      if (aValue < bValue) return sortDir === "asc" ? -1 : 1;
+      if (aValue > bValue) return sortDir === "asc" ? 1 : -1;
       return 0;
     });
-    return list;
-  }, [symbols, data, sortKey, sortDir, activeRange]);
 
-  const startResize = (col: keyof typeof colWidths, e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = colWidths[col];
+    return items;
+  }, [symbols, data, activeRange, sortKey, sortDir]);
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      setColWidths((prev) => ({
-        ...prev,
-        [col]: Math.max(80, startWidth + deltaX),
-      }));
-    };
-
-    const onMouseUp = () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-  };
-
-  const gridTemplate = `${colWidths.name}px ${colWidths.price}px ${colWidths.change}px ${colWidths.changePct}px ${colWidths.quality}px`;
+  const headers: Array<{ key: SortKey | null; label: string; align?: "left" | "right" }> = [
+    { key: "symbol", label: isVi ? "Tài sản" : "Asset" },
+    { key: "price", label: isVi ? "Giá" : "Price", align: "right" },
+    { key: "change", label: isVi ? "Biến động" : "Move", align: "right" },
+    { key: "changePct", label: isVi ? "% / xu hướng" : "% / trend", align: "right" },
+    { key: null, label: isVi ? "Tín hiệu" : "Signals" },
+    { key: null, label: isVi ? "Nguồn & thời gian" : "Source & freshness" },
+  ];
 
   return (
-    <div className="w-full">
-      {/* Sticky Table Header */}
-      <div
-        className="sticky top-0 z-20 bg-[#16131D] border-b border-white/10 text-slate-400 font-bold text-xs uppercase tracking-wider select-none"
-        style={{ display: "grid", gridTemplateColumns: gridTemplate }}
-      >
-        {[
-          { label: "Tên", key: "symbol" as const, resizable: "name" as const },
-          { label: "Giá", key: "price" as const, resizable: "price" as const, alignRight: true },
-          { label: "Thay đổi", key: null, resizable: "change" as const, alignRight: true },
-          { label: "% Thay đổi", key: "changePercent" as const, resizable: "changePct" as const, alignRight: true },
-          { label: "Dữ liệu", key: null, resizable: "quality" as const, alignRight: true },
-        ].map((col, idx) => (
-          <div
-            key={idx}
-            className={`py-3 px-2 flex items-center relative group ${col.alignRight ? "justify-end" : "justify-start"}`}
-          >
-            {col.key ? (
-              <button
-                onClick={() => handleSort(col.key!)}
-                className="hover:text-white transition-colors flex items-center gap-1 font-bold"
-              >
-                {col.label}
-                <span className="text-[9px] opacity-60">
-                  {sortKey === col.key ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
-                </span>
-              </button>
-            ) : (
-              <span>{col.label}</span>
-            )}
-            {/* Draggable resize handle */}
-            <div
-              onMouseDown={(e) => startResize(col.resizable, e)}
-              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-500 transition-colors z-30"
-            />
-          </div>
-        ))}
-      </div>
+    <div className="overflow-hidden rounded-3xl border border-[var(--market-border)]">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-[var(--market-border)]">
+          <thead className="bg-[var(--market-surface-elevated)]">
+            <tr>
+              {headers.map((header) => (
+                <th
+                  key={header.label}
+                  className={`px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--market-text-muted)] ${header.align === "right" ? "text-right" : "text-left"}`}
+                >
+                  {header.key ? (
+                    <button
+                      onClick={() => handleSort(header.key!)}
+                      className="inline-flex items-center gap-1 transition hover:text-[var(--market-text-primary)]"
+                    >
+                      {header.label}
+                      <span className="text-[10px]">
+                        {sortKey === header.key ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+                      </span>
+                    </button>
+                  ) : (
+                    header.label
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
 
-      {/* Table Body */}
-      <div className="divide-y divide-white/5">
-        {sortedSymbols.map(({ symbol, name }) => {
-          const d = data[symbol];
-          const chg = d ? getChange(d) : null;
-          const chgPct = d ? getChangePct(d) : null;
+          <tbody className="divide-y divide-[var(--market-border)] bg-[var(--market-surface)]">
+            {rows.map(({ asset, quote, displayChange, displayChangePct }) => {
+              const isPositive = (displayChangePct ?? 0) >= 0;
+              const isActive = selectedSymbol?.toUpperCase() === asset.symbol.toUpperCase();
 
-          return (
-            <div
-              key={symbol}
-              className="items-center py-2 transition-colors hover:bg-white/[0.02] text-xs"
-              style={{ display: "grid", gridTemplateColumns: gridTemplate }}
-            >
-              {/* Tên */}
-              <div className="flex items-center gap-2.5 min-w-0 px-2">
-                <div className="grid h-7 w-7 shrink-0 place-items-center rounded bg-white/5 text-[10px] font-black text-white">
-                  {symbol.replace("^", "").slice(0, 2)}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-white truncate">{symbol.replace("^", "")}</p>
-                  <p className="text-[10px] text-slate-400 truncate mt-0.5">{name}</p>
-                </div>
-              </div>
+              return (
+                <tr
+                  key={asset.symbol}
+                  onClick={() => onSelectSymbol?.(asset.symbol)}
+                  className={`cursor-pointer transition ${isActive ? "bg-[var(--market-selection)] border-l-2 border-l-[var(--market-accent)]" : "hover:bg-[var(--market-surface-hover)]"}`}
+                >
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-[var(--market-border)] bg-white/[0.04] text-xs font-semibold text-[var(--market-text-primary)]">
+                        {asset.symbol.replace("^", "").slice(0, 3)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[var(--market-text-primary)]">{asset.symbol.replace("^", "")}</p>
+                        <p className="truncate text-xs text-[var(--market-text-muted)]">{asset.name}</p>
+                      </div>
+                    </div>
+                  </td>
 
-              {/* Giá */}
-              <p className="text-right font-semibold text-white font-mono px-2">
-                {d ? d.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
-              </p>
+                  <td className="px-4 py-4 text-right text-sm font-medium text-[var(--market-text-primary)]">
+                    {formatMoney(quote?.price, quote?.currency || "USD")}
+                  </td>
 
-              {/* Thay đổi */}
-              <p className={`text-right font-semibold font-mono px-2 ${chg == null ? "text-slate-500" : chg >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {chg != null ? `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}
-              </p>
+                  <td className={`px-4 py-4 text-right text-sm font-semibold ${isPositive ? "text-[var(--market-positive)]" : "text-[var(--market-negative)]"}`}>
+                    {displayChange != null && Number.isFinite(displayChange)
+                      ? `${displayChange >= 0 ? "+" : ""}${displayChange.toFixed(2)}`
+                      : "—"}
+                  </td>
 
-              {/* % Thay đổi & Sparkline */}
-              <div className="text-right flex items-center justify-end gap-2 px-2">
-                {chgPct != null ? (
-                  <>
-                    <MiniSparkline />
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${chgPct >= 0 ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
-                      {chgPct >= 0 ? "▲" : "▼"} {Math.abs(chgPct).toFixed(2)}%
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-[10px] text-slate-500">—</span>
-                )}
-              </div>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center justify-end gap-3">
+                      <MiniSparkline points={quote?.sparkline} positive={isPositive} />
+                      <span className={`min-w-[72px] text-right text-sm font-semibold ${isPositive ? "text-[var(--market-positive)]" : "text-[var(--market-negative)]"}`}>
+                        {formatPercent(displayChangePct)}
+                      </span>
+                    </div>
+                  </td>
 
-              {/* Dữ liệu Quality */}
-              <div className="text-right px-2">
-                {d?.dataQuality ? (
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${d.dataQuality.status === "OK" ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-300"}`}>
-                    {d.dataQuality.status === "OK" ? "OK" : "WARN"} · {d.dataQuality.primarySource}
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-slate-500">—</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
+                  <td className="px-4 py-4">
+                    <div className="flex min-w-[132px] flex-wrap gap-1.5 text-[11px]">
+                      {quote?.volume && quote?.averageVolume ? (
+                        <span className="rounded-md bg-[var(--market-accent-soft)] px-1.5 py-1 font-semibold text-[var(--market-accent)]">
+                          Vol {(quote.volume / quote.averageVolume).toFixed(1)}x
+                        </span>
+                      ) : null}
+                      {quote?.trailingPE ? (
+                        <span className="rounded-md border border-[var(--market-border)] px-1.5 py-1 text-[var(--market-text-secondary)]">P/E {quote.trailingPE.toFixed(1)}</span>
+                      ) : null}
+                      {quote?.fiftyTwoWeekHigh && quote?.price ? (
+                        <span className="rounded-md border border-[var(--market-border)] px-1.5 py-1 text-[var(--market-text-secondary)]">
+                          {Math.abs(quote.fiftyTwoWeekHigh - quote.price) / quote.fiftyTwoWeekHigh <= 0.03 ? (isVi ? "Sát đỉnh 52T" : "Near 52W high") : (isVi ? "Có biên 52T" : "52W range")}
+                        </span>
+                      ) : null}
+                      {!quote?.volume && !quote?.trailingPE && !quote?.fiftyTwoWeekHigh ? <span className="text-[var(--market-text-muted)]">—</span> : null}
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-4">
+                    <div className="space-y-1 text-sm">
+                      <p className="text-[var(--market-text-primary)]">
+                        {quote?.dataQuality?.primarySource || "—"}
+                      </p>
+                      <p className="text-xs text-[var(--market-text-muted)]">
+                        {formatAsOf(quote?.asOf)}
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

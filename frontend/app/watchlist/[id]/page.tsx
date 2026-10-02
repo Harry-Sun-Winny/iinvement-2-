@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getWatchlistItems, addWatchlistItem, removeWatchlistItem, getStockPrice, WatchlistItem } from "../../lib/api";
+import { useTranslation } from "@/components/providers/I18nProvider";
 
 import StockAnalyticsModal from "./components/StockAnalyticsModal";
 
@@ -58,6 +59,7 @@ function classifyAsset(symbol: string, name = ""): AssetFilter {
 }
 
 export default function WatchlistPage() {
+  const { t } = useTranslation();
   const routeParams = useParams<{ id?: string }>() ?? {};
   const id = routeParams.id ?? "";
   const [items, setItems] = useState<WatchlistItem[]>([]);
@@ -179,16 +181,25 @@ export default function WatchlistPage() {
     });
   }, [filter, items, prices, sortDir, sortKey]);
 
-  const priced = items.map(item => prices[item.assetSymbol]).filter(Boolean);
-  const gainers = priced.filter(price => price.change != null && price.change >= 0);
-  const losers = priced.filter(price => price.change != null && price.change < 0);
-  const averageChange = priced.length ? priced.reduce((sum, price) => sum + (price.changePercent ?? 0), 0) / priced.length : 0;
-  const best = items.reduce<{ symbol: string; change: number } | null>((acc, item) => {
-    const price = prices[item.assetSymbol];
-    if (!price || price.changePercent == null) return acc;
-    if (!acc || price.changePercent > acc.change) return { symbol: item.assetSymbol, change: price.changePercent };
-    return acc;
-  }, null);
+  const priced = useMemo(() => {
+    return items
+      .map(item => {
+        const price = prices[item.assetSymbol];
+        return price ? { symbol: item.assetSymbol, name: item.assetName || "", price, changePercent: price.changePercent, change: price.change } : null;
+      })
+      .filter(Boolean) as { symbol: string; name: string; price: any; changePercent: number | null; change: number | null }[];
+  }, [items, prices]);
+
+  const gainers = useMemo(() => priced.filter(p => p.change != null && p.change >= 0), [priced]);
+  const losers = useMemo(() => priced.filter(p => p.change != null && p.change < 0), [priced]);
+  const averageChange = useMemo(() => priced.length ? priced.reduce((sum, p) => sum + (p.changePercent ?? 0), 0) / priced.length : 0, [priced]);
+  const best = useMemo(() => {
+    return priced.reduce<{ symbol: string; change: number } | null>((acc, p) => {
+      if (p.changePercent == null) return acc;
+      if (!acc || p.changePercent > acc.change) return { symbol: p.symbol, change: p.changePercent };
+      return acc;
+    }, null);
+  }, [priced]);
 
   function setSort(next: SortKey) {
     if (sortKey === next) setSortDir(prev => prev === "desc" ? "asc" : "desc");
@@ -200,9 +211,8 @@ export default function WatchlistPage() {
 
   return (
     <>
-
       <div className="flex flex-1 h-full overflow-hidden">
-      <main className="w-[800px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
+      <main className="w-[820px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
 
           {error && (
             <div className="antigravity-panel p-4 text-sm text-red-400 border border-red-500/20 bg-red-500/5 backdrop-blur">
@@ -215,12 +225,12 @@ export default function WatchlistPage() {
             <div className="flex flex-col border-b border-white/5 p-6 gap-4 bg-white/[0.01]">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div className="flex items-center gap-4">
-                  <h2 className="text-sm font-bold text-white tracking-widest uppercase">Watchlist Desk</h2>
+                  <h2 className="text-sm font-bold text-white tracking-widest uppercase">{t("watchlist.title")}</h2>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" className="antigravity-btn text-xs" onClick={() => fetchPrices(items.map(i => i.assetSymbol))} disabled={items.length === 0 || priceLoading}>
-                    <RefreshCw className={`h-3 w-3 mr-1 ${priceLoading ? "animate-spin" : ""}`} /> Refresh
+                    <RefreshCw className={`h-3 w-3 mr-1 ${priceLoading ? "animate-spin" : ""}`} /> {t("common.refresh")}
                   </Button>
                 </div>
               </div>
@@ -238,11 +248,11 @@ export default function WatchlistPage() {
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 focus-within:border-white/20 transition-all"
                   >
                     <Search className="h-3.5 w-3.5 text-slate-400" />
-                    <input type="text" value={query} onChange={e => handleSearchChange(e.target.value)} onFocus={() => query && setShowSuggestions(true)} placeholder="Tìm kiếm cổ phiếu để thêm..." className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 outline-none" />
+                    <input type="text" value={query} onChange={e => handleSearchChange(e.target.value)} onFocus={() => query && setShowSuggestions(true)} placeholder={t("watchlist.symbolPlaceholder")} className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 outline-none" />
                   </form>
                   {showSuggestions && (suggestions.length > 0 || searchLoading || searchError) && (
                     <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-white/5 bg-[#0b0c10] shadow-2xl">
-                      {searchLoading && <div className="px-4 py-2.5 text-xs text-slate-550">Đang tìm kiếm...</div>}
+                      {searchLoading && <div className="px-4 py-2.5 text-xs text-slate-550">{t("common.loading")}</div>}
                       {!searchLoading && searchError && <p className="px-4 py-3 text-xs text-amber-300">{searchError}</p>}
                       {suggestions.map(s => (
                         <div key={s.symbol} className="flex items-center justify-between gap-4 border-t border-white/[0.05] px-4 py-2.5 first:border-t-0 hover:bg-white/[0.04]">
@@ -252,7 +262,7 @@ export default function WatchlistPage() {
                           </div>
                           <Button type="button" size="sm" variant="ghost" className="antigravity-btn text-[10px] h-7 px-2" disabled={addingSymbol === s.symbol} onClick={() => void handleAdd(s)}>
                             <Plus className="h-3 w-3 mr-1" />
-                            {addingSymbol === s.symbol ? "Adding" : "Add"}
+                            {addingSymbol === s.symbol ? t("common.loading") : t("common.add")}
                           </Button>
                         </div>
                       ))}
@@ -274,25 +284,25 @@ export default function WatchlistPage() {
             {/* Table Content */}
             <div className="p-6">
               {items.length === 0 ? (
-                <div className="py-12 text-center text-sm text-slate-500 font-medium">Danh sách trống. Nhập mã phía trên để thêm!</div>
+                <div className="py-12 text-center text-sm text-slate-500 font-medium">{t("watchlist.noWatchlists")}</div>
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow className="border-white/5 hover:bg-transparent">
                         <th className="text-left py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">
-                          <button onClick={() => setSort("symbol")} className="hover:text-white inline-flex items-center gap-1">MÃ <ArrowDownUp className="h-3 w-3" /></button>
+                          <button onClick={() => setSort("symbol")} className="hover:text-white inline-flex items-center gap-1">{t("watchlist.symbol")} <ArrowDownUp className="h-3 w-3" /></button>
                         </th>
-                        <th className="text-left py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">Tên công ty</th>
+                        <th className="text-left py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">{t("watchlist.companyName")}</th>
                         <th className="text-right py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">
-                          <button onClick={() => setSort("price")} className="hover:text-white inline-flex items-center gap-1">Giá <ArrowDownUp className="h-3 w-3" /></button>
+                          <button onClick={() => setSort("price")} className="hover:text-white inline-flex items-center gap-1">{t("common.price")} <ArrowDownUp className="h-3 w-3" /></button>
                         </th>
-                        <th className="text-right py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">Thay đổi</th>
+                        <th className="text-right py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">{t("watchlist.change")}</th>
                         <th className="text-right py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">
-                          <button onClick={() => setSort("changePercent")} className="hover:text-white inline-flex items-center gap-1">% Thay đổi <ArrowDownUp className="h-3 w-3" /></button>
+                          <button onClick={() => setSort("changePercent")} className="hover:text-white inline-flex items-center gap-1">% {t("watchlist.change")} <ArrowDownUp className="h-3 w-3" /></button>
                         </th>
-                        <th className="text-center py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">Xu hướng</th>
-                        <th className="text-center py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">Hành động</th>
+                        <th className="text-center py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">{t("watchlist.trend")}</th>
+                        <th className="text-center py-3 px-4 text-slate-400 font-bold text-xs uppercase tracking-wider">{t("common.actions")}</th>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -335,7 +345,7 @@ export default function WatchlistPage() {
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent>Remove from watchlist</TooltipContent>
+                                <TooltipContent>{t("watchlist.deleteConfirm")}</TooltipContent>
                               </Tooltip>
                             </td>
                           </TableRow>
@@ -349,8 +359,101 @@ export default function WatchlistPage() {
           </div>
 
         </main>
-      <div className="flex-1 h-full overflow-y-auto p-6 bg-transparent" />
-    </div>
+        
+        {/* Right Analytics Workspace */}
+        <div className="flex-1 h-full overflow-y-auto p-6 space-y-6 z-10">
+          {/* Watchlist Summary Cards */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="antigravity-panel p-4 flex flex-col justify-between hover:bg-white/[0.01] transition-all bg-transparent">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t("watchlist.symbol")}</p>
+              <p className="text-xl font-black text-white mt-2">{items.length}</p>
+              <p className="text-[10px] text-slate-400 mt-1">{t("watchlist.priced")} {priced.length}</p>
+            </div>
+            <div className="antigravity-panel p-4 flex flex-col justify-between hover:bg-white/[0.01] transition-all bg-transparent">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t("watchlist.averagePct")}</p>
+              <p className={`text-xl font-black mt-2 ${averageChange >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {averageChange >= 0 ? "+" : ""}{averageChange.toFixed(2)}%
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">{t("watchlist.averageChange")}</p>
+            </div>
+            <div className="antigravity-panel p-4 flex flex-col justify-between hover:bg-white/[0.01] transition-all bg-transparent">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t("watchlist.bestPerformer")}</p>
+              <p className="text-xl font-black text-emerald-400 mt-2">{best ? best.symbol : "N/A"}</p>
+              <p className="text-[10px] text-slate-400 mt-1">{t("watchlist.rate")} <span className="font-bold text-emerald-450">{best ? `+${best.change.toFixed(2)}%` : "N/A"}</span></p>
+            </div>
+            <div className="antigravity-panel p-4 flex flex-col justify-between hover:bg-white/[0.01] transition-all bg-transparent">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t("watchlist.gainLossRatio")}</p>
+              <p className="text-xl font-black text-white mt-2">
+                <span className="text-emerald-400">{gainers.length}</span>
+                <span className="text-slate-500 mx-1">/</span>
+                <span className="text-red-400">{losers.length}</span>
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">{t("watchlist.gainLossCount")}</p>
+            </div>
+          </div>
+
+          {/* Top Gainers & Losers Leaderboard */}
+          <div className="antigravity-panel p-5 space-y-4 bg-transparent">
+            <div className="border-b border-white/5 pb-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">{t("watchlist.leaderboard")}</h3>
+            </div>
+            
+            {priced.length === 0 ? (
+              <p className="text-xs text-slate-550 italic text-center py-4">{t("watchlist.noMarketData")}</p>
+            ) : (
+              <div className="space-y-4">
+                {/* Top Gainers */}
+                {gainers.length > 0 && (
+                  <div>
+                    <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">{t("watchlist.topGainers")}</h4>
+                    <div className="space-y-2">
+                      {[...priced]
+                        .filter(p => p.changePercent != null && p.changePercent >= 0)
+                        .sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0))
+                        .slice(0, 3)
+                        .map(item => {
+                          return (
+                            <div key={item.symbol} className="flex items-center justify-between text-xs p-2 rounded bg-white/[0.01] border border-white/5">
+                              <div>
+                                <span className="font-semibold text-white">{item.symbol}</span>
+                                <span className="text-[10px] text-slate-400 ml-2 truncate max-w-[120px] inline-block align-bottom">{item.name || ""}</span>
+                              </div>
+                              <span className="font-mono font-bold text-emerald-400">+{item.changePercent?.toFixed(2)}%</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Top Losers */}
+                {losers.length > 0 && (
+                  <div>
+                    <h4 className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">{t("watchlist.topLosers")}</h4>
+                    <div className="space-y-2">
+                      {[...priced]
+                        .filter(p => p.changePercent != null && p.changePercent < 0)
+                        .sort((a, b) => (a.changePercent || 0) - (b.changePercent || 0))
+                        .slice(0, 3)
+                        .map(item => {
+                          return (
+                            <div key={item.symbol} className="flex items-center justify-between text-xs p-2 rounded bg-white/[0.01] border border-white/5">
+                              <div>
+                                <span className="font-semibold text-white">{item.symbol}</span>
+                                <span className="text-[10px] text-slate-400 ml-2 truncate max-w-[120px] inline-block align-bottom">{item.name || ""}</span>
+                              </div>
+                              <span className="font-mono font-bold text-red-400">{item.changePercent?.toFixed(2)}%</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       <StockAnalyticsModal
         item={selectedAsset}

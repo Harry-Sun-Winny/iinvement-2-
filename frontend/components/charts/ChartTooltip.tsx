@@ -7,6 +7,7 @@ interface ChartTooltipProps {
   active?: boolean;
   payload?: any[];
   label?: any;
+  labelFormatter?: (label: any) => string;
   valueFormatter?: (value: any) => string;
 }
 
@@ -14,6 +15,7 @@ export default function ChartTooltip({
   active,
   payload,
   label,
+  labelFormatter,
   valueFormatter = (val) => String(val),
 }: ChartTooltipProps) {
   if (!active || !payload || !payload.length) return null;
@@ -28,7 +30,7 @@ export default function ChartTooltip({
     >
       {label !== undefined && (
         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-          {label}
+          {labelFormatter ? labelFormatter(label) : label}
         </p>
       )}
       <div className="space-y-1">

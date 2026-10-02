@@ -4,6 +4,8 @@ import com.acme.investment.domain.market.HistoricalPrice;
 import com.acme.investment.domain.market.MarketData;
 import com.acme.investment.domain.market.MarketDataProvider;
 import com.acme.investment.domain.market.Quote;
+import java.time.OffsetDateTime;
+import java.util.HashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -11,6 +13,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class MarketDataService {
@@ -34,20 +37,101 @@ public class MarketDataService {
      */
     @Cacheable(value = "marketFundamentals", key = "#symbol", unless = "#result == null")
     public MarketData getFundamentals(String symbol) {
+        return loadFundamentalsWithProvenance(symbol).data();
+    }
+
+    /**
+     * Research needs provider attribution retained at field level. This deliberately uses one
+     * fundamentals provider response rather than the merged market view, so a citation is never
+     * guessed after fallback data has been combined.
+     */
+    public ResearchMarketData getResearchMarketData(String symbol) {
+        try {
+            ProviderMarketData providerData = loadFundamentalsWithProvenance(symbol);
+            Map<String, FieldProvenance> provenance = new HashMap<>();
+            addFundamentalProvenance(provenance, "pe", providerData.data().getPe(), providerData);
+            addFundamentalProvenance(provenance, "pb", providerData.data().getPb(), providerData);
+            addFundamentalProvenance(provenance, "roe", providerData.data().getRoe(), providerData);
+            addFundamentalProvenance(provenance, "roic", providerData.data().getRoic(), providerData);
+            addFundamentalProvenance(provenance, "beta", providerData.data().getBeta(), providerData);
+            addFundamentalProvenance(provenance, "dividendYield", providerData.data().getDividendYield(), providerData);
+            return new ResearchMarketData(providerData.data(), provenance, providerData.dataVersion());
+        } catch (Exception exception) {
+            log.error("[MarketDataService] Research fundamentals failed for {}", symbol, exception);
+            MarketData unavailable = new MarketData();
+            unavailable.setSymbol(symbol);
+            return new ResearchMarketData(unavailable, Map.of(), "market-provider-unavailable");
+        }
+    }
+
+    private ProviderMarketData loadFundamentalsWithProvenance(String symbol) {
+        OffsetDateTime retrievedAt = OffsetDateTime.now();
         try {
             MarketData data = fmpProvider.getFundamentalsAndProfile(symbol);
             if (data == null) throw new RuntimeException("Empty");
-            return data;
+            return new ProviderMarketData(data, "Financial Modeling Prep", "https://financialmodelingprep.com/",
+                    "FMP", retrievedAt, "market-provider-fmp-live");
         } catch (Exception e) {
             log.warn("FMP fundamentals failed for {}, switching to Finnhub: {}", symbol, e.getMessage());
-            // Fallback to Finnhub if FMP fails
             try {
-                return finnhubProvider.getFundamentalsAndProfile(symbol);
+                MarketData data = finnhubProvider.getFundamentalsAndProfile(symbol);
+                if (data == null) throw new RuntimeException("Empty");
+                return new ProviderMarketData(data, "Finnhub", "https://finnhub.io/", "FINNHUB", retrievedAt,
+                        "market-provider-finnhub-fallback");
             } catch (Exception fallbackEx) {
-                // Return empty rather than throwing, cache handles it or throws exception up
-                throw new RuntimeException("Both FMP and Finnhub failed to fetch fundamentals for " + symbol, fallbackEx);
+                log.warn("Finnhub fundamentals failed for {}, switching to Yahoo Finance: {}", symbol, fallbackEx.getMessage());
+                try {
+                    MarketData data = yahooProvider.getFundamentalsAndProfile(symbol);
+                    if (data == null) throw new RuntimeException("Empty");
+                    return new ProviderMarketData(data, "Yahoo Finance", "https://finance.yahoo.com/quote/" + symbol,
+                            "YAHOO", retrievedAt, "market-provider-yahoo-fallback");
+                } catch (Exception yahooEx) {
+                    throw new RuntimeException("FMP, Finnhub, and Yahoo failed to fetch fundamentals for " + symbol, yahooEx);
+                }
             }
         }
+    }
+
+    private void addFundamentalProvenance(Map<String, FieldProvenance> provenance, String field,
+                                          Object value, ProviderMarketData providerData) {
+        if (value == null) {
+            return;
+        }
+        provenance.put(field, new FieldProvenance(providerData.sourceName(), providerData.sourceUrl(),
+                providerData.retrievedAt(), sourceFields(providerData.providerId(), field)));
+    }
+
+    private List<String> sourceFields(String providerId, String field) {
+        if ("FMP".equals(providerId)) {
+            return switch (field) {
+                case "pe" -> List.of("ratios.priceEarningsRatioTTM");
+                case "pb" -> List.of("ratios.priceToBookRatioTTM");
+                case "roe" -> List.of("ratios.returnOnEquityTTM");
+                case "roic" -> List.of("ratios.returnOnCapitalEmployedTTM");
+                case "beta" -> List.of("profile.beta");
+                case "dividendYield" -> List.of("ratios.dividendYieldTTM");
+                default -> List.of(field);
+            };
+        }
+        if ("YAHOO".equals(providerId)) {
+            return switch (field) {
+                case "pe" -> List.of("summaryDetail.trailingPE");
+                case "pb" -> List.of("defaultKeyStatistics.priceToBook");
+                case "roe" -> List.of("financialData.returnOnEquity");
+                case "roic" -> List.of("financialData.returnOnInvestedCapital");
+                case "beta" -> List.of("summaryDetail.beta");
+                case "dividendYield" -> List.of("summaryDetail.dividendYield");
+                default -> List.of(field);
+            };
+        }
+        return switch (field) {
+            case "pe" -> List.of("metric.peBasicShareTTM");
+            case "pb" -> List.of("metric.pbNormalisedTTM");
+            case "roe" -> List.of("metric.roeTTM");
+            case "beta" -> List.of("metric.beta");
+            case "dividendYield" -> List.of("metric.dividendYieldIndicatedAnnual");
+            default -> List.of(field);
+        };
     }
 
     /**
@@ -185,4 +269,17 @@ public class MarketDataService {
         if (source.getHoldCount() != null) target.setHoldCount(source.getHoldCount());
         if (source.getSellCount() != null) target.setSellCount(source.getSellCount());
     }
+
+    private record ProviderMarketData(MarketData data, String sourceName, String sourceUrl, String providerId,
+                                      OffsetDateTime retrievedAt, String dataVersion) { }
+
+    public record ResearchMarketData(MarketData data, Map<String, FieldProvenance> fieldProvenance,
+                                     String dataVersion) {
+        public ResearchMarketData {
+            fieldProvenance = Map.copyOf(fieldProvenance);
+        }
+    }
+
+    public record FieldProvenance(String sourceName, String sourceUrl, OffsetDateTime observedAt,
+                                  List<String> sourceFields) { }
 }

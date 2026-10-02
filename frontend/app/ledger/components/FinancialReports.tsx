@@ -8,6 +8,7 @@ import { FinancialReportDTO, JournalEntryDTO, ThesisRecommendation } from '../..
 
 interface FinancialReportsProps {
   reports: FinancialReportDTO[];
+  reportSyncStatus?: string;
   journals: JournalEntryDTO[];
   onAddReport: (report: Omit<FinancialReportDTO, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'archived'>) => boolean;
   onSaveJournal: (entry: Omit<JournalEntryDTO, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'archived' | 'revisions'>) => void;
@@ -16,7 +17,7 @@ interface FinancialReportsProps {
 }
 
 export default function FinancialReports({ 
-  reports, journals, onAddReport, onSaveJournal, onAutosaveJournal, onDeleteJournal 
+  reports, reportSyncStatus, journals, onAddReport, onSaveJournal, onAutosaveJournal, onDeleteJournal 
 }: FinancialReportsProps) {
   
   const [selectedSymbol, setSelectedSymbol] = useState<string>('FPT');
@@ -207,6 +208,12 @@ export default function FinancialReports({
 
       {/* Main Workspace */}
       <div className="lg:col-span-3 space-y-4">
+        {reportSyncStatus && (
+          <div className="flex items-center gap-2 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] px-4 py-3 text-[11px] text-cyan-100">
+            <Clock size={13} className={reportSyncStatus.startsWith('Đang') ? 'animate-spin text-cyan-300' : 'text-emerald-300'} />
+            <span>{reportSyncStatus}</span>
+          </div>
+        )}
         
         {/* Toggle buttons inside main area */}
         <div className="flex justify-between items-center bg-white/[0.01] p-3 rounded-xl border border-white/5">

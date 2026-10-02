@@ -1,10 +1,22 @@
 const BASE_URL = "/api/backend";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const AUTH_TIMEOUT_MS = 180_000;
+const MARKET_PRICE_TIMEOUT_MS = 15_000;
 
 function getToken() {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("token");
+}
+
+export interface AuthSession { token: string; tokenType: string; }
+
+let refreshInFlight: Promise<AuthSession> | null = null;
+
+export function storeAuthSession(session: AuthSession) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("token", session.token);
+  // Remove the legacy browser-readable refresh token after an upgrade.
+  localStorage.removeItem("refreshToken");
 }
 
 export class ApiError extends Error {
@@ -28,6 +40,7 @@ function clearSessionAndRedirect() {
   if (typeof window === "undefined") return;
 
   localStorage.removeItem("token");
+  localStorage.removeItem("refreshToken");
   if (window.location.pathname !== "/login") {
     window.location.replace("/login?reason=session-expired");
   }
@@ -44,26 +57,38 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const signal = options.signal
     ? AbortSignal.any([options.signal, controller.signal])
     : controller.signal;
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const send = (accessToken: string | null) => fetch(`${BASE_URL}${path}`, {
+    ...options,
+    signal,
+    credentials: "same-origin",
+    headers: {
+      ...(!isFormData ? { "Content-Type": "application/json" } : {}),
+      ...(!authRequest && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...options.headers,
+    },
+  });
   let res: Response;
 
   try {
-    res = await fetch(`${BASE_URL}${path}`, {
-      ...options,
-      signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...(!authRequest && token ? { Authorization: `Bearer ${token}` } : {}),
-        ...options.headers,
-      },
-    });
+    res = await send(token);
+    if (res.status === 401 && !authRequest && token) {
+      const session = await renewSession();
+      storeAuthSession(session);
+      res = await send(session.token);
+    }
   } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.status === 401 && !authRequest) clearSessionAndRedirect();
+      throw error;
+    }
     if (options.signal?.aborted) {
-      throw new ApiError(499, "Y?u c?u ?? ???c h?y.");
+      throw new ApiError(499, "Yêu cầu đã được hủy.");
     }
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ApiError(408, "M?y ch? ph?n h?i qu? l?u. Vui l?ng th? l?i sau v?i gi?y.");
+      throw new ApiError(408, "Máy chủ phản hồi quá lâu. Vui lòng thử lại sau vài giây.");
     }
-    throw new ApiError(0, "Kh?ng th? k?t n?i m?y ch?. Vui l?ng ki?m tra m?ng v? th? l?i.");
+    throw new ApiError(0, "Không thể kết nối máy chủ. Vui lòng kiểm tra mạng và thử lại.");
   } finally {
     window.clearTimeout(timeout);
   }
@@ -73,7 +98,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const message = errorText || `${res.status} ${res.statusText}`;
     if (res.status === 401 && !authRequest && token) {
       clearSessionAndRedirect();
-      throw new ApiError(res.status, "Phi?n ??ng nh?p ?? h?t h?n. Vui l?ng ??ng nh?p l?i.");
+      throw new ApiError(res.status, "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
     }
     throw new ApiError(res.status, message);
   }
@@ -93,21 +118,21 @@ async function getErrorText(res: Response) {
 
 export async function login(email: string, password: string, signal?: AbortSignal) {
   try {
-    return await request<{ token: string; tokenType: string }>("/api/v1/auth/login", {
+    return await request<AuthSession>("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       signal,
     });
   } catch (error) {
     if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-      throw new ApiError(error.status, "Email ho?c m?t kh?u kh?ng ??ng");
+      throw new ApiError(error.status, "Email hoặc mật khẩu không đúng.");
     }
     throw error;
   }
 }
 
 export const register = (email: string, password: string, fullName: string, signal?: AbortSignal) =>
-  request<{ token: string; tokenType: string }>("/api/v1/auth/register", {
+  request<AuthSession>("/api/v1/auth/register", {
     method: "POST",
     body: JSON.stringify({
       email: email.trim().toLowerCase(),
@@ -116,6 +141,28 @@ export const register = (email: string, password: string, fullName: string, sign
     }),
     signal,
   });
+
+export const refreshSession = () => request<AuthSession>("/api/v1/auth/refresh", { method: "POST" });
+
+async function renewSession(): Promise<AuthSession> {
+  if (!refreshInFlight) {
+    refreshInFlight = refreshSession().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+export async function logout() {
+  try {
+    return await request<void>("/api/v1/auth/logout", { method: "POST" });
+  } finally {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
+    }
+  }
+}
 
 export const getPortfolios = () => request<Portfolio[]>("/api/v1/portfolios");
 export const createPortfolio = (name: string, baseCurrency: string, type?: string) =>
@@ -152,6 +199,37 @@ export const triggerPortfolioBackfill = (portfolioId: string) =>
   request<{ status: string; message: string }>(`/api/v1/portfolios/${portfolioId}/backfill`, {
     method: "POST",
   });
+
+export interface ResearchObservation {
+  parameterCode: string; moduleId: string; baseWeight: number; rawValue: number | null;
+  normalizedScore: number | null; state: "ACTIVE" | "WATCH" | "DORMANT" | "DEPRECATED" | "REACTIVATED";
+  evidenceStatus: "VERIFIED" | "ESTIMATED" | "PROXY" | "MISSING" | "CONFLICTED";
+  dataQuality: number; effectiveWeight: number; warnings: string[];
+  citation?: { sourceName: string; sourceUrl: string | null; observedAt: string | null; sourceFields: string[] };
+}
+export interface ResearchResult {
+  symbol: string; asOf: string; methodologyVersion: string; dataVersion: string;
+  coverage: number; confidence: number; status: string; warnings: string[]; vetoes: string[];
+  parameterResults: ResearchObservation[];
+  stockScore: { qualityScore: number | null; valuationScore: number | null; resilienceScore: number | null;
+    overallScore: number | null; confidence: number; coverage: number; vetoStatus: string;
+    finalClassification: string; governanceStatus: string; };
+}
+export interface RecordedResearchRun { runId: string; response: ResearchResult; }
+export interface ResearchCatalogImportSummary {
+  importedEntries: number; methodologyVersion: string; importedAt: string; catalogStatus: string;
+}
+export const getResearchScore = (symbol: string) =>
+  request<ResearchResult>(`/api/v1/research/${encodeURIComponent(symbol)}/score`);
+export const getResearchParameters = (symbol: string) =>
+  request<ResearchResult>(`/api/v1/research/${encodeURIComponent(symbol)}/parameters`);
+export const createResearchRun = (symbol: string) =>
+  request<RecordedResearchRun>(`/api/v1/research/${encodeURIComponent(symbol)}/runs`, { method: "POST" });
+export const importResearchCatalog = (file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return request<ResearchCatalogImportSummary>("/api/v1/research/catalog/import", { method: "POST", body: form });
+};
 export const createTransaction = (portfolioId: string, data: CreateTransactionDto) =>
   request<Transaction>(`/api/v1/portfolios/${portfolioId}/transactions`, {
     method: "POST",
@@ -166,12 +244,57 @@ export const deleteTransaction = (portfolioId: string, transactionId: string) =>
   request<void>(`/api/v1/portfolios/${portfolioId}/transactions/${transactionId}`, {
     method: "DELETE",
   });
+export const transferPortfolioPosition = (sourcePortfolioId: string, targetPortfolioId: string, symbol: string) =>
+  request<TransferPositionResult>(`/api/v1/portfolios/${sourcePortfolioId}/transactions/positions/${encodeURIComponent(symbol)}/transfer`, {
+    method: "PATCH",
+    body: JSON.stringify({ targetPortfolioId }),
+  });
+
+export interface TransactionImportRow {
+  assetSymbol: string;
+  assetName: string;
+  type: string;
+  quantity: number;
+  price: number;
+  currency: string;
+  transactionDate: string;
+  notes?: string;
+  fee?: number;
+}
+
+export interface TransactionImportIssue {
+  row: number;
+  field: string;
+  message: string;
+}
+
+export interface TransactionImportPreview {
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  rows: TransactionImportRow[];
+  issues: TransactionImportIssue[];
+  readyToImport: boolean;
+}
+
+export const previewTransactionImport = (portfolioId: string, rows: TransactionImportRow[]) =>
+  request<TransactionImportPreview>(`/api/v1/portfolios/${portfolioId}/transactions/import/preview`, {
+    method: "POST",
+    body: JSON.stringify({ rows }),
+  });
+
+export const commitTransactionImport = (portfolioId: string, rows: TransactionImportRow[]) =>
+  request<Transaction[]>(`/api/v1/portfolios/${portfolioId}/transactions/import/commit`, {
+    method: "POST",
+    body: JSON.stringify({ rows }),
+  });
 
 export interface Portfolio { id: string; userId: string; name: string; baseCurrency: string; type: string; createdAt: string; updatedAt: string; }
 export interface Watchlist { id: string; userId: string; name: string; createdAt: string; }
 export interface Goal { id: string; userId: string; name: string; targetAmount: number; currentAmount: number; currency: string; targetDate: string; status: string; createdAt: string; }
 export interface Transaction { id: string; portfolioId: string; assetSymbol: string; assetName: string; type: string; quantity: number; price: number; currency: string; transactionDate: string; notes: string; createdAt: string; fee?: number; }
 export interface CreateTransactionDto { assetSymbol: string; assetName: string; type: string; quantity: number; price: number; currency: string; transactionDate: string; notes?: string; fee?: number; }
+export interface TransferPositionResult { sourcePortfolioId: string; targetPortfolioId: string; symbol: string; transactionCount: number; }
 export interface PortfolioRiskMetrics {
   totalReturn: number;
   annualizedReturn: number;
@@ -214,18 +337,76 @@ export interface PortfolioDeepAnalysis {
   methodologyNotes: string[];
 }
 
-export async function getStockPrice(symbol: string): Promise<{ symbol: string; price: number; change: number; changePercent: number } | null> {
-  try {
-    const res = await fetch(`/api/stock-price?symbol=${encodeURIComponent(symbol)}`);
-    if (!res.ok) {
-      return null;
-    }
+export interface StockPriceQuote {
+  symbol: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  previousClose?: number | null;
+  dayHigh?: number | null;
+  dayLow?: number | null;
+  currency?: string | null;
+  asOf?: string | null;
+  tradingDate?: string | null;
+  requestedSymbol?: string;
+  resolvedSymbol?: string | null;
+}
 
-    const data = await res.json();
-    return data && typeof data.price === "number" ? data : null;
-  } catch {
-    return null;
-  }
+export async function getStockPrices(
+  symbols: string[],
+  signal?: AbortSignal,
+): Promise<Record<string, StockPriceQuote | null>> {
+  const normalizedSymbols = Array.from(
+    new Set(symbols.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean)),
+  );
+  const result = Object.fromEntries(
+    normalizedSymbols.map((symbol) => [symbol, null]),
+  ) as Record<string, StockPriceQuote | null>;
+
+  const batches = Array.from(
+    { length: Math.ceil(normalizedSymbols.length / 40) },
+    (_, index) => normalizedSymbols.slice(index * 40, (index + 1) * 40),
+  );
+
+  await Promise.all(batches.map(async (batch) => {
+    try {
+      const timeoutSignal = AbortSignal.timeout(MARKET_PRICE_TIMEOUT_MS);
+      const requestSignal = signal
+        ? AbortSignal.any([signal, timeoutSignal])
+        : timeoutSignal;
+      const res = await fetch(
+        `/api/stock-price?symbols=${encodeURIComponent(batch.join(","))}`,
+        { signal: requestSignal },
+      );
+      if (!res.ok) return;
+
+      const payload = await res.json();
+      const quotes = Array.isArray(payload?.quotes) ? payload.quotes : [];
+      quotes.forEach((quote: StockPriceQuote) => {
+        const requestedSymbol = String(quote?.requestedSymbol || quote?.symbol || "").toUpperCase();
+        const symbol = String(quote?.symbol || "").toUpperCase();
+        const cleanRequested = requestedSymbol.replace(/[\s.,]+$/, "");
+        const cleanSymbol = symbol.replace(/[\s.,]+$/, "");
+
+        if (typeof quote?.price === "number") {
+          if (requestedSymbol in result) result[requestedSymbol] = quote;
+          if (symbol in result) result[symbol] = quote;
+          if (cleanRequested in result) result[cleanRequested] = quote;
+          if (cleanSymbol in result) result[cleanSymbol] = quote;
+        }
+      });
+    } catch {
+      // Preserve null entries so a partial provider failure does not block the dashboard.
+    }
+  }));
+
+  return result;
+}
+
+export async function getStockPrice(symbol: string): Promise<StockPriceQuote | null> {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const quotes = await getStockPrices([normalizedSymbol]);
+  return quotes[normalizedSymbol] ?? null;
 }
 
 export interface WatchlistItem {
@@ -474,4 +655,47 @@ export async function uploadJournalAttachment(file: File, attachmentType: string
   }
 
   return res.json();
+}
+
+export interface FxRateResponse {
+  base: "USD";
+  rates: Record<string, number>;
+  updatedAt: string;
+  source: string;
+  fallback?: boolean;
+}
+
+export async function getFxRate(currency: string, signal?: AbortSignal): Promise<FxRateResponse> {
+  try {
+    const res = await fetch(`/api/fx-rate?currency=${encodeURIComponent(currency)}`, { signal });
+    if (!res.ok) {
+      throw new Error("Failed to fetch FX rate");
+    }
+    const data = await res.json();
+    return {
+      base: "USD",
+      rates: {
+        USD: 1,
+        USDT: 1,
+        USDC: 1,
+        [currency.toUpperCase()]: (data.rate && data.rate > 0 && !data.error && !(currency.toUpperCase() === 'VND' && data.rate === 1)) ? data.rate : (currency.toUpperCase() === 'VND' ? 25400 : 1),
+      },
+      updatedAt: new Date().toISOString(),
+      source: data.error ? "Fallback (API offline)" : "Yahoo Finance",
+      fallback: !!data.error,
+    };
+  } catch (err) {
+    return {
+      base: "USD",
+      rates: {
+        USD: 1,
+        USDT: 1,
+        USDC: 1,
+        [currency.toUpperCase()]: 25400,
+      },
+      updatedAt: new Date().toISOString(),
+      source: "Fallback (Static rate)",
+      fallback: true,
+    };
+  }
 }

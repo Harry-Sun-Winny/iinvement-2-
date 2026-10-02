@@ -1,3 +1,4 @@
+
 package com.acme.investment.application.holding;
 
 import com.acme.investment.domain.holding.Holding;
@@ -48,7 +49,8 @@ public class HoldingService {
         positionRepo.flush();
 
         List<TransactionEntity> txs = transactionRepo.findByPortfolioId(portfolioId);
-        txs.sort(Comparator.comparing(TransactionEntity::getTransactionDate));
+        txs.sort(Comparator.comparing(TransactionEntity::getTransactionDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(TransactionEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
 
         Map<String, BigDecimal> qty = new HashMap<>();
         Map<String, BigDecimal> costBasis = new HashMap<>();
@@ -106,3 +108,6 @@ public class HoldingService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
     }
 }
+
+
+

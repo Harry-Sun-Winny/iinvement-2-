@@ -63,14 +63,14 @@ export interface CalendarDateWindow {
   to: string;
 }
 
-export const CALENDAR_TABS: { value: CalendarCategory; label: string }[] = [
-  { value: "economic", label: "Lịch Kinh Tế" },
-  { value: "holidays", label: "Ngày Nghỉ Lễ" },
-  { value: "earnings", label: "Thu Nhập" },
-  { value: "dividends", label: "Cổ Tức" },
-  { value: "splits", label: "Chia Tách" },
-  { value: "ipo", label: "IPO" },
-  { value: "options", label: "Hết Hạn Quyền Chọn" },
+export const CALENDAR_TABS: { value: CalendarCategory; labelKey: string }[] = [
+  { value: "economic", labelKey: "calendar.tabs.economic" },
+  { value: "holidays", labelKey: "calendar.tabs.holidays" },
+  { value: "earnings", labelKey: "calendar.tabs.earnings" },
+  { value: "dividends", labelKey: "calendar.tabs.dividends" },
+  { value: "splits", labelKey: "calendar.tabs.splits" },
+  { value: "ipo", labelKey: "calendar.tabs.ipo" },
+  { value: "options", labelKey: "calendar.tabs.options" },
 ];
 
 export const CALENDAR_RANGES: { value: CalendarRange; label: string }[] = [

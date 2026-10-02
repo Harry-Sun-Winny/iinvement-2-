@@ -2,9 +2,9 @@ openapi: 3.0.3
 info:
   title: Investment Portfolio Management API
   version: 0.1.0
-  description: REST API for portfolio, watchlist, goal, news, and AI analysis workflows.
+  description: REST API for portfolio, watchlist, goal, news, research, and AI analysis workflows.
 servers:
-  - url: http://localhost:8081
+  - url: http://localhost:8080
 security:
   - bearerAuth: []
 paths:
@@ -20,7 +20,12 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '200':
-          description: JWT authentication response
+          description: Access token response. Refresh session is set as an HttpOnly cookie.
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh cookie.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -37,11 +42,159 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: JWT authentication response
+          description: Access token response. Refresh session is set as an HttpOnly cookie.
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh cookie.
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
+  /api/v1/auth/refresh:
+    post:
+      security: []
+      summary: Rotate a valid refresh session and issue a new access token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: New access token. Refresh cookie is rotated on success.
+          headers:
+            Set-Cookie:
+              description: Rotated HttpOnly refresh cookie.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid, expired, or revoked refresh session
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke all refresh tokens for the authenticated user
+      responses:
+        '204':
+          description: Session family revoked and refresh cookie cleared
+          headers:
+            Set-Cookie:
+              description: Expired HttpOnly refresh cookie.
+              schema:
+                type: string
+  /api/v1/research/{symbol}/profile:
+    get:
+      summary: Fetch point-in-time company profile metadata for research
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Research profile snapshot with provenance, coverage, and warnings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResearchResponse'
+  /api/v1/research/{symbol}/parameters:
+    get:
+      summary: Fetch source-mapped research parameters for a symbol
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Research parameter observations with evidence status and effective weights
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResearchResponse'
+  /api/v1/research/{symbol}/score:
+    get:
+      summary: Fetch governed research scoring summary for a symbol
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Governed scorecard. Overall score may be null when coverage is insufficient.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResearchResponse'
+  /api/v1/research/{symbol}/runs:
+    post:
+      summary: Calculate and persist a private point-in-time research snapshot
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Immutable research snapshot, owned by the authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordedResearchRun'
+  /api/v1/research/{symbol}/runs/latest:
+    get:
+      summary: Fetch the authenticated user's latest saved research snapshot
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Latest private research snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersistedResearchRun'
+        '404':
+          description: No saved research run exists for this symbol
+  /api/v1/research/catalog/import:
+    post:
+      summary: Import the complete 3,600-parameter DOCX catalog
+      description: Admin-only. The server validates all 3,600 expected codes before an atomic upsert and does not retain the uploaded document.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: DOCX investment parameter dictionary
+      responses:
+        '200':
+          description: Catalog was fully validated and imported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResearchCatalogImportSummary'
+        '400':
+          description: Invalid, partial, duplicate, or unreadable catalog document
+        '403':
+          description: Admin role required
   /api/v1/portfolios:
     get:
       summary: List current user's portfolios
@@ -170,6 +323,88 @@ paths:
       responses:
         '200':
           description: Attachment binary content
+  /api/v1/portfolios/{portfolioId}/transactions/import/preview:
+    post:
+      summary: Preview transaction CSV import (Premium/Admin)
+      parameters:
+        - name: portfolioId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionImportRequest'
+      responses:
+        '200':
+          description: Import preview with normalized rows and validation issues
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionImportPreview'
+        '403':
+          description: Premium role required
+  /api/v1/portfolios/{portfolioId}/transactions/positions/{symbol}/transfer:
+    patch:
+      summary: Move a symbol's full transaction history to another owned portfolio
+      description: Preserves cost basis by reassigning existing transaction records. Does not create synthetic BUY or SELL events.
+      parameters:
+        - name: portfolioId
+          in: path
+          required: true
+          description: Source portfolio ID
+          schema:
+            type: string
+            format: uuid
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferPositionRequest'
+      responses:
+        '200':
+          description: Transaction history moved, audited, and both portfolios scheduled for recalculation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferPositionResult'
+        '400':
+          description: Invalid symbol or identical source and target portfolios
+        '404':
+          description: Portfolio or symbol history not found for the authenticated user
+  /api/v1/portfolios/{portfolioId}/transactions/import/commit:
+    post:
+      summary: Commit transaction CSV import (Premium/Admin)
+      parameters:
+        - name: portfolioId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionImportRequest'
+      responses:
+        '201':
+          description: Transactions created and audited
+        '400':
+          description: Preview validation failed
+        '403':
+          description: Premium role required
 components:
   securitySchemes:
     bearerAuth:
@@ -199,6 +434,12 @@ components:
           format: email
         password:
           type: string
+    RefreshRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+          description: Optional compatibility field. Preferred production flow uses the HttpOnly refresh cookie.
     AuthResponse:
       type: object
       required: [token, tokenType]
@@ -208,6 +449,90 @@ components:
         tokenType:
           type: string
           example: Bearer
+    TransactionImportRequest:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            required: [assetSymbol, type, quantity, price, currency, transactionDate]
+            properties:
+              assetSymbol: { type: string }
+              assetName: { type: string }
+              type: { type: string, enum: [BUY, SELL, MUA, BAN] }
+              quantity: { type: number }
+              price: { type: number }
+              currency: { type: string }
+              transactionDate: { type: string, format: date }
+              notes: { type: string }
+              fee: { type: number }
+    TransferPositionRequest:
+      type: object
+      required: [targetPortfolioId]
+      properties:
+        targetPortfolioId:
+          type: string
+          format: uuid
+    TransferPositionResult:
+      type: object
+      required: [sourcePortfolioId, targetPortfolioId, symbol, transactionCount]
+      properties:
+        sourcePortfolioId:
+          type: string
+          format: uuid
+        targetPortfolioId:
+          type: string
+          format: uuid
+        symbol:
+          type: string
+        transactionCount:
+          type: integer
+    TransactionImportIssue:
+      type: object
+      required: [row, field, message]
+      properties:
+        row:
+          type: integer
+        field:
+          type: string
+        message:
+          type: string
+    TransactionImportNormalizedRow:
+      type: object
+      required: [assetSymbol, assetName, type, quantity, price, currency, transactionDate, fee]
+      properties:
+        assetSymbol: { type: string }
+        assetName: { type: string }
+        type: { type: string, enum: [BUY, SELL] }
+        quantity: { type: number }
+        price: { type: number }
+        currency: { type: string }
+        transactionDate: { type: string, format: date }
+        notes: { type: string, nullable: true }
+        fee: { type: number }
+    TransactionImportPreview:
+      type: object
+      required: [totalRows, validRows, invalidRows, rows, issues, readyToImport]
+      properties:
+        totalRows:
+          type: integer
+        validRows:
+          type: integer
+        invalidRows:
+          type: integer
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionImportNormalizedRow'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionImportIssue'
+        readyToImport:
+          type: boolean
     JournalAttachmentRequest:
       type: object
       required: [file_name, attachment_type]
@@ -328,20 +653,13 @@ components:
     PortfolioRiskMetrics:
       type: object
       properties:
-        totalReturn:
-          type: number
-        annualizedReturn:
-          type: number
-        volatility:
-          type: number
-        sharpeRatio:
-          type: number
-        sortinoRatio:
-          type: number
-        maxDrawdown:
-          type: number
-        valueAtRisk:
-          type: number
+        totalReturn: { type: number }
+        annualizedReturn: { type: number }
+        volatility: { type: number }
+        sharpeRatio: { type: number }
+        sortinoRatio: { type: number }
+        maxDrawdown: { type: number }
+        valueAtRisk: { type: number }
     PortfolioDeepAnalysisOverview:
       type: object
       properties:
@@ -355,52 +673,38 @@ components:
           type: string
           format: date
           nullable: true
-        latestValue:
-          type: number
-        netGain:
-          type: number
-        totalReturnPct:
-          type: number
-        cashBalance:
-          type: number
+        latestValue: { type: number }
+        netGain: { type: number }
+        totalReturnPct: { type: number }
+        cashBalance: { type: number }
     PortfolioEquityCurvePoint:
       type: object
       properties:
         date:
           type: string
           format: date
-        portfolioValue:
-          type: number
-        investedAmount:
-          type: number
-        cashBalance:
-          type: number
+        portfolioValue: { type: number }
+        investedAmount: { type: number }
+        cashBalance: { type: number }
     PortfolioRollingMetricPoint:
       type: object
       properties:
         date:
           type: string
           format: date
-        sharpeRatio:
-          type: number
-        sortinoRatio:
-          type: number
-        valueAtRisk95:
-          type: number
-        conditionalValueAtRisk95:
-          type: number
+        sharpeRatio: { type: number }
+        sortinoRatio: { type: number }
+        valueAtRisk95: { type: number }
+        conditionalValueAtRisk95: { type: number }
     PortfolioDrawdownPoint:
       type: object
       properties:
         date:
           type: string
           format: date
-        portfolioValue:
-          type: number
-        runningPeak:
-          type: number
-        drawdown:
-          type: number
+        portfolioValue: { type: number }
+        runningPeak: { type: number }
+        drawdown: { type: number }
     PortfolioDeepAnalysisResponse:
       type: object
       properties:
@@ -424,3 +728,145 @@ components:
           type: array
           items:
             type: string
+    ResearchCompanyProfile:
+      type: object
+      properties:
+        symbol: { type: string }
+        primaryIndustry: { type: string, nullable: true }
+        subIndustry: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        exchange: { type: string, nullable: true }
+        businessModel: { type: string, nullable: true }
+    ResearchObservation:
+      type: object
+      required: [parameterCode, moduleId, baseWeight, state, evidenceStatus, dataQuality, effectiveWeight, warnings, citation]
+      properties:
+        parameterCode: { type: string }
+        moduleId: { type: string }
+        baseWeight: { type: number }
+        rawValue:
+          type: number
+          nullable: true
+        normalizedScore:
+          type: number
+          nullable: true
+        state:
+          type: string
+          enum: [ACTIVE, WATCH, DORMANT, DEPRECATED, REACTIVATED]
+        evidenceStatus:
+          type: string
+          enum: [VERIFIED, ESTIMATED, PROXY, MISSING, CONFLICTED]
+        dataQuality: { type: number }
+        effectiveWeight: { type: number }
+        warnings:
+          type: array
+          items:
+            type: string
+        citation:
+          $ref: '#/components/schemas/ResearchEvidenceCitation'
+    ResearchEvidenceCitation:
+      type: object
+      required: [sourceName, observedAt, sourceFields]
+      properties:
+        sourceName: { type: string }
+        sourceUrl: { type: string, nullable: true, format: uri }
+        observedAt: { type: string, format: date-time, nullable: true }
+        sourceFields:
+          type: array
+          items: { type: string }
+    ResearchStockScore:
+      type: object
+      properties:
+        qualityScore: { type: number, nullable: true }
+        growthScore: { type: number, nullable: true }
+        valuationScore: { type: number, nullable: true }
+        resilienceScore: { type: number, nullable: true }
+        governanceScore: { type: number, nullable: true }
+        catalystScore: { type: number, nullable: true }
+        marketScore: { type: number, nullable: true }
+        overallScore: { type: number, nullable: true }
+        confidence: { type: number }
+        coverage: { type: number }
+        vetoStatus: { type: string }
+        finalClassification: { type: string }
+        coveredWeight: { type: number }
+        governanceStatus: { type: string }
+    ResearchResponse:
+      type: object
+      required: [symbol, asOf, methodologyVersion, dataVersion, profile, coverage, confidence, status, warnings, parameterResults, vetoes, stockScore]
+      properties:
+        symbol: { type: string }
+        asOf:
+          type: string
+          format: date-time
+        methodologyVersion: { type: string }
+        dataVersion: { type: string }
+        profile:
+          $ref: '#/components/schemas/ResearchCompanyProfile'
+        coverage: { type: number }
+        confidence: { type: number }
+        status: { type: string }
+        warnings:
+          type: array
+          items:
+            type: string
+        parameterResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResearchObservation'
+        vetoes:
+          type: array
+          items:
+            type: string
+        stockScore:
+          $ref: '#/components/schemas/ResearchStockScore'
+    RecordedResearchRun:
+      type: object
+      required: [runId, response]
+      properties:
+        runId: { type: string, format: uuid }
+        response:
+          $ref: '#/components/schemas/ResearchResponse'
+    PersistedResearchObservation:
+      type: object
+      required: [parameterCode, state, evidenceStatus, dataQuality, effectiveWeight, warnings, citation]
+      properties:
+        parameterCode: { type: string }
+        rawValue: { type: object, nullable: true, additionalProperties: true }
+        normalizedScore: { type: number, nullable: true }
+        state: { type: string }
+        evidenceStatus: { type: string }
+        dataQuality: { type: number }
+        effectiveWeight: { type: number }
+        warnings:
+          type: array
+          items: { type: string }
+        citation:
+          $ref: '#/components/schemas/ResearchEvidenceCitation'
+    PersistedResearchRun:
+      type: object
+      required: [id, symbol, asOf, methodologyVersion, dataVersion, status, coverage, confidence, warnings, observations]
+      properties:
+        id: { type: string, format: uuid }
+        symbol: { type: string }
+        asOf: { type: string, format: date-time }
+        methodologyVersion: { type: string }
+        dataVersion: { type: string }
+        status: { type: string }
+        coverage: { type: number }
+        confidence: { type: number }
+        warnings:
+          type: array
+          items: { type: string }
+        observations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersistedResearchObservation'
+    ResearchCatalogImportSummary:
+      type: object
+      required: [importedEntries, methodologyVersion, importedAt, catalogStatus]
+      properties:
+        importedEntries: { type: integer, example: 3600 }
+        methodologyVersion: { type: string }
+        importedAt: { type: string, format: date-time }
+        catalogStatus: { type: string, example: DOCUMENTED_PENDING_SOURCE_MAPPING }

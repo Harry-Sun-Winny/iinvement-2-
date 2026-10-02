@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { HoldingsTable, Holding } from "@/components/dashboard/HoldingsTable";
 import { InstitutionalDetailPanel } from "@/components/dashboard/InstitutionalDetailPanel";
+import { useTranslation } from "@/components/providers/I18nProvider";
 import { getPortfolios, getTransactions, getStockPrice, Portfolio } from "../lib/api";
 import { FilterPanel } from "@/components/dashboard/FilterPanel";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,9 @@ import { Search, X, PieChart as PieIcon, BarChart, Wallet, TrendingUp, Activity 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useMarketTheme } from "@/app/market/hooks/useMarketTheme";
+import { DailySessionSummary } from "@/components/dashboard/DailySessionSummary";
+import { summarizeDailySession } from "../lib/finance/daily-session";
 
 import Alert from "@/components/ui/Alert";
 import ChartTooltip from "@/components/charts/ChartTooltip";
@@ -33,6 +37,22 @@ import {
   recommendation,
 } from "@/lib/analysis-framework";
 import { normalizeClassification, CanonicalClassification, ALL_INDUSTRIES, ALL_COUNTRIES } from "@/lib/taxonomy-normalizer";
+import {
+  buildHoldingsFromTransactions,
+  buildPositionsFromHoldings,
+  applyLivePrices,
+  buildDisplayPositions,
+  FinancialCalculationError,
+  StockQuote,
+  DashboardPosition,
+} from "../lib/finance/calculations";
+import {
+  fmtMoney,
+  fmtSignedMoney,
+  getValueTone,
+  convertCurrency,
+} from "../lib/finance/currency";
+import { getFxRate } from "../lib/api";
 
 // Helper to generate dynamic colors based on string hash
 function getDynamicColor(str: string): string {
@@ -50,38 +70,112 @@ export interface HoldingExt extends Holding {
   canonical?: CanonicalClassification;
   trendPoints?: number[];
   dayChangePct?: number;
+  todayPnl?: number | null;
+  quoteCurrency?: string;
+  todayPnlDisplay?: number | null;
+  previousClose?: number | null;
+  quoteAsOf?: string | null;
+  quoteTradingDate?: string | null;
+  portfolioId?: string;
+  portfolioName?: string;
+  assetType?: string;
+  currency?: string;
 }
 
-function formatCompactCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 2,
-  }).format(value);
+// Legacy formatCompactCurrency and formatSignedCurrency removed.
+// Use fmtMoney / fmtSignedMoney from finance/currency engine instead.
+
+function sortTransactions(a: any, b: any) {
+  const dateA = new Date(a.transactionDate).getTime();
+  const dateB = new Date(b.transactionDate).getTime();
+  if (dateA !== dateB) return dateA - dateB;
+  return new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
 }
 
-function formatSignedCurrency(value: number) {
-  return `${value >= 0 ? "+" : "-"}${formatCompactCurrency(Math.abs(value))}`;
-}
-
-function formatSignedPercent(value: number) {
-  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+function addWeights(posList: HoldingExt[]): HoldingExt[] {
+  const totalMV = posList.reduce((sum, h) => sum + h.marketValue, 0);
+  return posList.map(h => ({
+    ...h,
+    weight: totalMV > 0 ? (h.marketValue / totalMV) * 100 : 0
+  }));
 }
 
 export default function HoldingsPage() {
+  const { language } = useTranslation();
+  const isVi = language === "vi";
+  const { styleVariables } = useMarketTheme();
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [positions, setPositions] = useState<HoldingExt[]>([]);
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
+  const [baseCurrency, setBaseCurrency] = useState<"USD" | "VND">("USD");
+  const [fxRates, setFxRates] = useState<Record<string, number>>({ USD: 1, VND: 25400 });
+  const [fxStatus, setFxStatus] = useState<"live" | "fallback" | "error">("live");
+  const [fxMetadata, setFxMetadata] = useState<{ updatedAt?: string; source?: string }>({});
+  const [calculationErrors, setCalculationErrors] = useState<FinancialCalculationError[]>([]);
+  const [realizedPnlByPortfolio, setRealizedPnlByPortfolio] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [mounted, setMounted] = useState(false);
 
+  const [leftWidth, setLeftWidth] = useState(800);
+  const isDraggingRef = useRef(false);
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDraggingRef.current) return;
+    const newWidth = Math.max(400, Math.min(1200, e.clientX - 256));
+    setLeftWidth(newWidth);
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  };
+
+  useEffect(() => {
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    async function fetchVndRate() {
+      try {
+        const data = await getFxRate("VND");
+        if (!active) return;
+        setFxRates(data.rates);
+        setFxStatus(data.fallback ? "fallback" : "live");
+        setFxMetadata({ updatedAt: data.updatedAt, source: data.source });
+      } catch (err) {
+        if (!active) return;
+        setFxStatus("error");
+        setFxMetadata({ source: "Yahoo Finance (Offline)" });
+      }
+    }
+    fetchVndRate();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -95,163 +189,229 @@ export default function HoldingsPage() {
   async function loadHoldingsData() {
     setLoading(true);
     setError("");
+
     try {
       const portfolioData = await getPortfolios();
       setPortfolios(portfolioData);
-      
-      const holdingsMap: Record<string, { symbol: string; name: string; qty: number; cost: number; sector: string; country: string }> = {};
+
       const allTx: any[] = [];
-      
+      const allErrors: FinancialCalculationError[] = [];
+      const nextPositions: HoldingExt[] = [];
+      const nextRealizedPnlByPortfolio: Record<string, number> = {};
+
       await Promise.all(
         portfolioData.map(async portfolio => {
           try {
             const transactions = await getTransactions(portfolio.id);
-            const orderedTx = [...transactions].sort((a, b) => {
-              const dateA = new Date(a.transactionDate).getTime();
-              const dateB = new Date(b.transactionDate).getTime();
-              if (dateA !== dateB) return dateA - dateB;
-              return new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
-            });
+            const orderedTx = [...transactions].sort(sortTransactions);
             allTx.push(...orderedTx);
-            orderedTx.forEach((tx: any) => {
-              const symbol = String(tx.assetSymbol || "").toUpperCase();
-              if (!symbol) return;
 
-              const quantity = Number(tx.quantity || 0);
-              const price = Number(tx.price || 0);
-              const side = String(tx.type || "").toUpperCase();
+            const result = buildHoldingsFromTransactions(orderedTx, portfolio);
+            nextRealizedPnlByPortfolio[portfolio.id] = result.realizedPnl;
 
-              if (!holdingsMap[symbol]) {
-                holdingsMap[symbol] = {
-                  symbol,
-                  name: tx.assetName || symbol,
-                  qty: 0,
-                  cost: 0,
-                  sector: tx.assetSector || "Other",
-                  country: tx.assetCountry || "Other"
-                };
+            allErrors.push(
+              ...result.errors.map(error => ({
+                ...error,
+                portfolioId: portfolio.id,
+                portfolioName: portfolio.name,
+              }))
+            );
+
+            const rawPositions = buildPositionsFromHoldings(result.holdings, portfolio);
+
+            await Promise.all(rawPositions.map(async (pos) => {
+              const tx: any = orderedTx.find(t => String(t.assetSymbol || "").toUpperCase() === pos.symbol);
+              let sector = tx?.assetSector || tx?.sector || "Other";
+              let industry = tx?.assetIndustry || tx?.industry || "";
+              const country = tx?.assetCountry || tx?.country || "Other";
+              let companyName = pos.name || pos.symbol;
+
+              if ((sector === "Other" || !industry) && pos.symbol) {
+                try {
+                  const response = await fetch(`/api/stock-sector?symbol=${encodeURIComponent(pos.symbol)}`);
+                  const metadata = response.ok ? await response.json() : null;
+                  if (metadata?.sector && metadata.sector !== "Khác") sector = metadata.sector;
+                  industry = metadata?.industry || industry;
+                  if (metadata?.name && metadata.name !== pos.symbol) companyName = metadata.name;
+                } catch {
+                  // Keep the explicit Other fallback when the metadata source is unavailable.
+                }
               }
 
-              if (side === "BUY") {
-                holdingsMap[symbol].qty += quantity;
-                holdingsMap[symbol].cost += quantity * price;
-              } else if (side === "SELL") {
-                const avg = holdingsMap[symbol].qty > 0 ? holdingsMap[symbol].cost / holdingsMap[symbol].qty : price;
-                holdingsMap[symbol].qty -= quantity;
-                holdingsMap[symbol].cost = Math.max(0, holdingsMap[symbol].cost - avg * quantity);
-              }
-            });
-          } catch {}
+              const canonical = normalizeClassification(
+                pos.symbol,
+                sector,
+                industry,
+                country
+              );
+
+              nextPositions.push({
+                ...pos,
+                name: companyName,
+                currentPrice: pos.currentPrice ?? 0,
+                marketValue: pos.marketValue ?? 0,
+                pnl: pos.pnl ?? 0,
+                returnPct: pos.returnPct ?? 0,
+                todayPnl: pos.todayPnl ?? 0,
+                sector,
+                country,
+                canonical,
+                weight: 0,
+              });
+            }));
+          } catch (err: any) {
+            console.error(`Failed to load portfolio transactions:`, err);
+          }
         })
       );
 
-      const activePositions = Object.values(holdingsMap).filter(p => p.qty > 0);
-      
-      // Calculate initial positions without blocking on external price APIs
-      const initialHoldings = activePositions.map(pos => {
-        const avgCost = pos.qty > 0 ? pos.cost / pos.qty : 0;
-        const canonical = normalizeClassification(pos.symbol, pos.sector, undefined, pos.country);
-        return {
-          symbol: pos.symbol,
-          name: pos.name,
-          quantity: pos.qty,
-          avgCost,
-          currentPrice: avgCost,
-          marketValue: pos.qty * avgCost,
-          pnl: 0,
-          returnPct: 0,
-          weight: 0,
-          sector: pos.sector,
-          country: pos.country,
-          canonical
-        };
-      });
+      setAllTransactions(
+        allTx.sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime())
+      );
 
-      const initialTotalMV = initialHoldings.reduce((sum, h) => sum + h.marketValue, 0);
-      const initialHoldingsWithWeight = initialHoldings.map(h => ({
-        ...h,
-        weight: initialTotalMV > 0 ? (h.marketValue / initialTotalMV) * 100 : 0
-      }));
+      setCalculationErrors(allErrors);
+      setRealizedPnlByPortfolio(nextRealizedPnlByPortfolio);
 
-      setPositions(initialHoldingsWithWeight);
-      setAllTransactions(allTx.sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime()));
+      const weightedInitial = addWeights(nextPositions);
+      setPositions(weightedInitial);
       setLoading(false);
 
-      // Fetch live prices in the background
-      const pricesMap: Record<string, number> = {};
-      const changePctMap: Record<string, number> = {};
-      const trendMap: Record<string, number[]> = {};
-      await Promise.all(
-        activePositions.map(async pos => {
-          try {
-            const quote = await getStockPrice(pos.symbol);
-            if (quote && typeof quote.price === "number" && Number.isFinite(quote.price)) {
-              pricesMap[pos.symbol] = quote.price;
-              if (typeof quote.changePercent === "number" && Number.isFinite(quote.changePercent)) {
-                changePctMap[pos.symbol] = quote.changePercent;
-              }
-            }
-          } catch {}
-
-          try {
-            const res = await fetch(`/api/stock-history?symbol=${encodeURIComponent(pos.symbol)}&range=1M`);
-            if (!res.ok) return;
-            const history = await res.json();
-            const points = Array.isArray(history?.points) ? history.points : [];
-            const trendPoints = points
-              .map((point: { adjustedClose?: number | null; close?: number | null }) => point.adjustedClose ?? point.close ?? null)
-              .filter((value: number | null) => value != null && Number.isFinite(value))
-              .slice(-7);
-
-            if (trendPoints.length >= 2) {
-              trendMap[pos.symbol] = trendPoints;
-            }
-          } catch {}
-        })
-      );
-
-      // Apply live prices to positions asynchronously
-      setPositions(prev => {
-        const updated = prev.map(h => {
-          const actualPrice = pricesMap[h.symbol];
-          if (actualPrice == null) return h;
-          const cost = h.quantity * h.avgCost;
-          const marketValue = h.quantity * actualPrice;
-          const pnl = marketValue - cost;
-          const returnPct = cost > 0 ? (pnl / cost) * 100 : 0;
-          return {
-            ...h,
-            currentPrice: actualPrice,
-            marketValue,
-            pnl,
-            returnPct,
-            dayChangePct: changePctMap[h.symbol] ?? 0,
-            trendPoints: trendMap[h.symbol]
-          };
-        });
-
-        const totalMarketValue = updated.reduce((sum, h) => sum + h.marketValue, 0);
-        return updated.map(h => ({
-          ...h,
-          weight: totalMarketValue > 0 ? (h.marketValue / totalMarketValue) * 100 : 0
-        }));
-      });
-
+      await loadLivePrices(weightedInitial);
     } catch (e: any) {
-      setError(e.message || "Không thể tải danh sách tài sản.");
+      setError(e.message || (isVi ? "Không thể tải danh sách tài sản." : "Could not load asset list."));
       setLoading(false);
     }
   }
 
+  async function loadLivePrices(initialPositions: HoldingExt[]) {
+    const pricesMap: Record<string, number> = {};
+    const changePctMap: Record<string, number> = {};
+    const previousCloseMap: Record<string, number> = {};
+    const quoteAsOfMap: Record<string, string> = {};
+    const quoteTradingDateMap: Record<string, string> = {};
+    const trendMap: Record<string, number[]> = {};
+    const quotesMap = new Map<string, StockQuote>();
+
+    await Promise.all(
+      initialPositions.map(async pos => {
+        try {
+          const quote = await getStockPrice(pos.symbol);
+          if (quote && typeof quote.price === "number" && Number.isFinite(quote.price)) {
+            pricesMap[pos.symbol] = quote.price;
+            if (typeof quote.changePercent === "number" && Number.isFinite(quote.changePercent)) {
+              changePctMap[pos.symbol] = quote.changePercent;
+            }
+            const previousClose = typeof quote.previousClose === "number"
+              ? quote.previousClose
+              : quote.price - (quote.change ?? 0);
+            if (Number.isFinite(previousClose)) previousCloseMap[pos.symbol] = previousClose;
+            if (typeof quote.asOf === "string") quoteAsOfMap[pos.symbol] = quote.asOf;
+            if (typeof quote.tradingDate === "string") quoteTradingDateMap[pos.symbol] = quote.tradingDate;
+
+            quotesMap.set(pos.symbol, {
+              price: quote.price,
+              previousClose,
+              changeAmount: quote.change,
+              changePercent: quote.changePercent,
+              // Keep the quote currency from the market API instead of guessing from the asset.
+              currency: String(quote.currency || "USD").toUpperCase(),
+            });
+          }
+        } catch (err) {
+          console.error(`Failed to load live price for ${pos.symbol}:`, err);
+        }
+
+        try {
+          const res = await fetch(`/api/stock-history?symbol=${encodeURIComponent(pos.symbol)}&range=1M`);
+          if (!res.ok) return;
+          const history = await res.json();
+          const points = Array.isArray(history?.points) ? history.points : [];
+          const trendPoints = points
+            .map((point: { adjustedClose?: number | null; close?: number | null }) => point.adjustedClose ?? point.close ?? null)
+            .filter((value: number | null) => value != null && Number.isFinite(value))
+            .slice(-7);
+
+          if (trendPoints.length >= 2) {
+            trendMap[pos.symbol] = trendPoints;
+          }
+        } catch (err) {
+          console.error(`Failed to load history for ${pos.symbol}:`, err);
+        }
+      })
+    );
+
+    setPositions(prev => {
+      const priced = applyLivePrices(prev as unknown as DashboardPosition[], quotesMap);
+      const updated: HoldingExt[] = priced.map(pos => {
+        // Find original HoldingExt to preserve sector/country/canonical
+        const original = prev.find(p => p.symbol === pos.symbol);
+        return {
+          ...pos,
+          currentPrice: pos.currentPrice ?? 0,
+          marketValue: pos.marketValue ?? 0,
+          pnl: pos.pnl ?? 0,
+          returnPct: pos.returnPct ?? 0,
+          todayPnl: pos.todayPnl ?? 0,
+          sector: original?.sector ?? "Other",
+          country: original?.country ?? "Other",
+          canonical: original?.canonical,
+          dayChangePct: changePctMap[pos.symbol] ?? original?.dayChangePct ?? 0,
+          previousClose: previousCloseMap[pos.symbol] ?? original?.previousClose ?? null,
+          quoteAsOf: quoteAsOfMap[pos.symbol] ?? original?.quoteAsOf ?? null,
+          quoteTradingDate: quoteTradingDateMap[pos.symbol] ?? original?.quoteTradingDate ?? null,
+          trendPoints: trendMap[pos.symbol] ?? original?.trendPoints,
+          weight: 0,
+        };
+      });
+
+      const totalMV = updated.reduce((sum, h) => sum + h.marketValue, 0);
+      return updated.map(h => ({
+        ...h,
+        weight: totalMV > 0 ? (h.marketValue / totalMV) * 100 : 0
+      }));
+    });
+  }
+
+  const displayPositions = useMemo(() => {
+    try {
+      const converted = buildDisplayPositions(positions as unknown as DashboardPosition[], baseCurrency, fxRates);
+      const totalMarketValue = converted.reduce(
+        (sum, h) => sum + (h.marketValueDisplay ?? 0),
+        0
+      );
+      return converted.map(h => {
+        // Merge back HoldingExt fields lost during DisplayPosition conversion
+        const original = positions.find(p => p.symbol === h.symbol);
+        return {
+          ...h,
+          sector: original?.sector ?? "Other",
+          country: original?.country ?? "Other",
+          canonical: original?.canonical,
+          trendPoints: original?.trendPoints,
+          dayChangePct: original?.dayChangePct ?? 0,
+          previousClose: original?.previousClose ?? null,
+          quoteAsOf: original?.quoteAsOf ?? null,
+          quoteTradingDate: original?.quoteTradingDate ?? null,
+          weight: totalMarketValue > 0
+            ? ((h.marketValueDisplay ?? 0) / totalMarketValue) * 100
+            : 0,
+        };
+      });
+    } catch (e: any) {
+      console.error("Failed to build display positions:", e);
+      return [];
+    }
+  }, [positions, baseCurrency, fxRates]);
+
   const analytics = useMemo(() => {
     // 1. Map positions with scores
-    const positionsWithScores = positions.map((h) => {
+    const positionsWithScores = displayPositions.map((h) => {
       const sector = h.canonical?.sector || "Other";
       const country = h.canonical?.country || "Other";
       const scores = scorePosition({
-        returnPct: h.returnPct,
-        totalReturnPct: h.returnPct,
-        weight: h.weight,
+        returnPct: h.returnPct ?? 0,
+        totalReturnPct: h.returnPct ?? 0,
+        weight: h.weight ?? 0,
       });
       const totalScore = weightedScore(scores, sector);
       return {
@@ -265,7 +425,7 @@ export default function HoldingsPage() {
     const industryAcc: Record<string, number> = {};
     positionsWithScores.forEach((p) => {
       const label = p.canonical?.industry || "Other";
-      industryAcc[label] = (industryAcc[label] || 0) + p.marketValue;
+      industryAcc[label] = (industryAcc[label] || 0) + (p.marketValueDisplay ?? 0);
     });
     const industryAlloc = Object.entries(industryAcc)
       .map(([name, value]) => ({ name, value, fill: getDynamicColor(name) }))
@@ -275,7 +435,7 @@ export default function HoldingsPage() {
     const countryAcc: Record<string, number> = {};
     positionsWithScores.forEach((p) => {
       const label = p.canonical?.country || "Other";
-      countryAcc[label] = (countryAcc[label] || 0) + p.marketValue;
+      countryAcc[label] = (countryAcc[label] || 0) + (p.marketValueDisplay ?? 0);
     });
     const countryAlloc = Object.entries(countryAcc)
       .map(([name, value]) => ({ name, value, fill: getDynamicColor(name) }))
@@ -286,11 +446,11 @@ export default function HoldingsPage() {
       industryAlloc,
       countryAlloc,
     };
-  }, [positions]);
+  }, [displayPositions]);
 
   const topPosition = useMemo(() => {
     if (analytics.positions.length === 0) return null;
-    return [...analytics.positions].sort((a, b) => b.marketValue - a.marketValue)[0];
+    return [...analytics.positions].sort((a, b) => (b.marketValueDisplay ?? 0) - (a.marketValueDisplay ?? 0))[0];
   }, [analytics.positions]);
 
   const radarData = useMemo(() => {
@@ -299,10 +459,10 @@ export default function HoldingsPage() {
     // Convert keys from pillar scores back to radar elements
     const keys: (keyof PillarScores)[] = ["fundamental", "technical", "quantitative", "sentiment"];
     const labels: Record<string, string> = {
-      fundamental: "Cơ bản",
-      technical: "Kỹ thuật",
-      quantitative: "Định lượng",
-      sentiment: "Tâm lý",
+      fundamental: isVi ? "Cơ bản" : "Fundamental",
+      technical: isVi ? "Kỹ thuật" : "Technical",
+      quantitative: isVi ? "Định lượng" : "Quantitative",
+      sentiment: isVi ? "Tâm lý" : "Sentiment",
     };
     const weights = getWeightForSector(topPosition.canonical?.sector || "Other");
 
@@ -319,8 +479,13 @@ export default function HoldingsPage() {
   }, [topPosition]);
 
   const filteredData = useMemo(() => {
-    return positions.map(h => ({
+    return displayPositions.map(h => ({
       ...h,
+      // Coerce nullable DisplayPosition fields for Holding compatibility
+      currentPrice: h.currentPrice ?? 0,
+      marketValue: h.marketValue ?? 0,
+      pnl: h.pnl ?? 0,
+      returnPct: h.returnPct ?? 0,
       mappedIndustry: h.canonical?.industry || "Other",
       mappedCountry: h.canonical?.country || "Other"
     })).filter(h => {
@@ -343,81 +508,157 @@ export default function HoldingsPage() {
         h.name.toLowerCase().includes(search.toLowerCase());
       return matchIndustry && matchCountry && matchSearch;
     });
-  }, [positions, selectedIndustries, selectedCountries, search]);
+  }, [displayPositions, selectedIndustries, selectedCountries, search]);
 
   const summary = useMemo(() => {
-    const totalValue = positions.reduce((sum, holding) => sum + holding.marketValue, 0);
-    const totalPnl = positions.reduce((sum, holding) => sum + holding.pnl, 0);
+    const totalValue = displayPositions.reduce(
+      (sum, holding) => sum + (holding.marketValueDisplay ?? 0),
+      0
+    );
+    const unrealizedPnl = displayPositions.reduce(
+      (sum, holding) => sum + (holding.pnlDisplay ?? 0),
+      0
+    );
+    const realizedPnl = Object.entries(realizedPnlByPortfolio).reduce((sum, [portfolioId, pnl]) => {
+      const portfolio = portfolios.find((item) => item.id === portfolioId);
+      const portfolioCurrency = portfolio?.baseCurrency || (portfolio as any)?.currency || "USD";
+      try {
+        return sum + convertCurrency(pnl, portfolioCurrency, baseCurrency, fxRates);
+      } catch {
+        return sum;
+      }
+    }, 0);
+    const totalPnl = unrealizedPnl + realizedPnl;
     const weightedTodayChange = totalValue > 0
-      ? positions.reduce((sum, holding) => sum + ((holding.dayChangePct ?? 0) * holding.marketValue), 0) / totalValue
+      ? displayPositions.reduce((sum, holding) => sum + ((holding.dayChangePct ?? 0) * (holding.marketValueDisplay ?? 0)), 0) / totalValue
       : 0;
 
     return {
       totalValue,
       totalPnl,
+      unrealizedPnl,
+      realizedPnl,
       weightedTodayChange,
-      positionCount: positions.length,
+      positionCount: displayPositions.length,
     };
-  }, [positions]);
+  }, [baseCurrency, displayPositions, fxRates, portfolios, realizedPnlByPortfolio]);
+
+  const dailySession = useMemo(
+    () => summarizeDailySession(displayPositions.map(position => ({
+      symbol: position.symbol,
+      quantity: position.quantity,
+      currentPrice: position.currentPriceDisplay,
+      previousClose: position.previousClose == null
+        ? null
+        : convertCurrency(position.previousClose, position.quoteCurrency || position.currency || "USD", baseCurrency, fxRates),
+      valueChange: position.todayPnlDisplay,
+    }))),
+    [baseCurrency, displayPositions, fxRates],
+  );
+  const dailySessionTradingDate = useMemo(
+    () => displayPositions.map(position => position.quoteTradingDate).filter(Boolean).sort().at(-1) ?? null,
+    [displayPositions],
+  );
 
   return (
-    <div className="flex flex-1 h-full overflow-hidden">
-      <main className="w-[800px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
-      <header className="mb-7">
-            <p className="text-sm font-medium text-[#54a0ff]">Quản lý danh mục đầu tư</p>
-            <h2 className="mt-2 text-3xl font-black rainbow-text">Holdings Portfolio</h2>
-          </header>
+    <div style={styleVariables} className="flex flex-1 h-full overflow-hidden">
+      <main style={{ width: `${leftWidth}px` }} className="shrink-0 h-full overflow-y-auto p-6 space-y-6">
+      <header className="mb-7 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-[#54a0ff]">{isVi ? "Quản lý danh mục đầu tư" : "Portfolio Management"}</p>
+          <h2 className="mt-2 text-3xl font-black rainbow-text">{isVi ? "Holdings Portfolio" : "Holdings Portfolio"}</h2>
+        </div>
 
-          {error && (
-            <Alert variant="error" className="mb-6">
-              {error}
-            </Alert>
-          )}
+        {/* Currency Switcher Toggle */}
+        <div className="flex bg-zinc-950/60 p-1 rounded-xl border border-white/5 gap-0.5 self-start md:self-auto select-none">
+          {(["USD", "VND"] as const).map((curr) => (
+            <button
+              key={curr}
+              onClick={() => setBaseCurrency(curr)}
+              className={`px-2.5 py-1 text-[9px] font-black tracking-wider rounded-lg transition-all duration-200 ${
+                baseCurrency === curr
+                  ? "bg-white/[0.08] text-white shadow-sm"
+                  : "text-slate-500 hover:text-white"
+              }`}
+            >
+              {curr}
+            </button>
+          ))}
+        </div>
+      </header>
 
-          {loading ? (
-            <div className="antigravity-panel p-12 text-center text-sm text-slate-500 font-medium">
-              Đang tải danh sách tài sản...
-            </div>
-          ) : positions.length === 0 ? (
-            <div className="antigravity-panel p-12 text-center text-sm text-slate-500 font-medium">
-              Danh mục đầu tư trống. Vui lòng thêm giao dịch để xem số liệu phân bổ.
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card className="antigravity-panel border-white/5 bg-white/[0.02] shadow-[0_18px_50px_rgba(15,23,42,0.2)] transition-all hover:border-cyan-400/20 hover:bg-white/[0.035]">
-                  <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-                    <div>
-                      <CardTitle className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
-                        T&#7893;ng gi&#225; tr&#7883; danh m&#7909;c
-                      </CardTitle>
-                      <CardDescription className="mt-2 text-xs text-slate-400">
-                        Quy m&#244; t&#224;i s&#7843;n &#273;ang n&#7855;m gi&#7919; theo gi&#225; hi&#7879;n t&#7841;i
-                      </CardDescription>
-                    </div>
-                    <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-3 text-cyan-300">
-                      <Wallet className="h-5 w-5" />
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <p className="text-3xl font-black text-white">{formatCompactCurrency(summary.totalValue)}</p>
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>{summary.positionCount} v&#7883; th&#7871; &#273;ang n&#7855;m gi&#7919;</span>
-                      <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-300">
-                        Live
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
+      {fxStatus === "fallback" && (
+        <div className="antigravity-panel p-4 text-xs text-amber-400 border border-amber-500/20 bg-amber-500/5 backdrop-blur mb-6">
+          ⚠️ {isVi 
+            ? `Đang sử dụng tỷ giá quy đổi mặc định (1 USD = 25,400 VND). Kết nối API tỷ giá không khả dụng.`
+            : `Using default fallback FX rate (1 USD = 25,400 VND). Live currency API is currently offline.`}
+        </div>
+      )}
+
+      {calculationErrors.length > 0 && (
+        <div className="antigravity-panel p-4 text-xs text-amber-400 border border-amber-500/20 bg-amber-500/5 backdrop-blur mb-6 flex flex-col gap-1.5">
+          <span className="font-bold">⚠️ {isVi ? "Cảnh báo giao dịch vượt bán (Oversell):" : "Oversell Transactions Skipped:"}</span>
+          <div className="max-h-[120px] overflow-y-auto space-y-1.5 pr-2">
+            {calculationErrors.map((err, idx) => (
+              <div key={idx} className="pl-3 border-l-2 border-amber-500/40 text-slate-300">
+                <span className="font-semibold text-white/90">[{err.portfolioName || "Portfolio"}] {err.symbol}</span>: {err.message}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <Alert variant="error" className="mb-6">
+          {error}
+        </Alert>
+      )}
+
+      {loading ? (
+        <div className="rainbow-border antigravity-panel p-12 text-center text-sm text-slate-500 font-medium">
+          {isVi ? "Đang tải danh sách tài sản..." : "Loading asset list..."}
+        </div>
+      ) : positions.length === 0 ? (
+        <div className="antigravity-panel p-12 text-center text-sm text-slate-500 font-medium">
+          {isVi ? "Danh mục đầu tư trống. Vui lòng thêm giao dịch để xem số liệu phân bổ." : "Portfolio is empty. Please add transactions to view allocation data."}
+        </div>
+      ) : (
+        <>
+          <DailySessionSummary summary={dailySession} currency={baseCurrency} tradingDate={dailySessionTradingDate} />
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="antigravity-panel border-white/5 bg-white/[0.02] shadow-[0_18px_50px_rgba(15,23,42,0.2)] transition-all hover:border-cyan-400/20 hover:bg-white/[0.035]">
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                <div>
+                  <CardTitle className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
+                    {isVi ? "Tổng giá trị danh mục" : "Total Portfolio Value"}
+                  </CardTitle>
+                  <CardDescription className="mt-2 text-xs text-slate-400">
+                    {isVi ? "Quy mô tài sản đang nắm giữ theo giá hiện tại" : "Current market value of all held assets"}
+                  </CardDescription>
+                </div>
+                <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-3 text-cyan-300">
+                  <Wallet className="h-5 w-5" />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-3xl font-black text-white">{fmtMoney(summary.totalValue, baseCurrency)}</p>
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  <span>{summary.positionCount} {isVi ? "vị thế đang nắm giữ" : "open positions"}</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-300">
+                    Live
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
 
                 <Card className="antigravity-panel border-white/5 bg-white/[0.02] shadow-[0_18px_50px_rgba(15,23,42,0.2)] transition-all hover:border-emerald-400/20 hover:bg-white/[0.035]">
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
                     <div>
                       <CardTitle className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
-                        T&#7893;ng l&#227;i / l&#7895;
+                        {isVi ? "Tổng lãi / lỗ" : "Total Profit / Loss"}
                       </CardTitle>
                       <CardDescription className="mt-2 text-xs text-slate-400">
-                        Hi&#7879;u qu&#7843; to&#224;n danh m&#7909;c so v&#7899;i gi&#225; v&#7889;n trung b&#236;nh
+                        {isVi ? "Gồm lãi đã chốt khi bán và lãi/lỗ vị thế còn giữ" : "Realized sales P/L plus unrealized open-position P/L"}
                       </CardDescription>
                     </div>
                     <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-emerald-300">
@@ -425,12 +666,19 @@ export default function HoldingsPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <p className={`text-3xl font-black ${summary.totalPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {formatSignedCurrency(summary.totalPnl)}
+                    <p className={`text-3xl font-black ${
+                      getValueTone(summary.totalPnl) === "positive" 
+                        ? "text-emerald-400" 
+                        : getValueTone(summary.totalPnl) === "negative" 
+                        ? "text-red-400" 
+                        : "text-slate-400"
+                    }`}>
+                      {fmtSignedMoney(summary.totalPnl, baseCurrency)}
                     </p>
-                    <p className="text-xs text-slate-400">
-                      D&#249;ng b&#7843;n r&#250;t g&#7885;n &#273;&#7875; m&#7855;t qu&#233;t nhanh h&#417;n, gi&#7843;m c&#7843;m gi&#225;c b&#7883; ng&#7853;p trong nhi&#7873;u ch&#7919; s&#7889;.
-                    </p>
+                    <div className="space-y-1 text-xs text-slate-400">
+                      <p>{isVi ? "Đã chốt khi bán" : "Realized sales"}: <span className={summary.realizedPnl >= 0 ? "text-emerald-300" : "text-red-300"}>{fmtSignedMoney(summary.realizedPnl, baseCurrency)}</span></p>
+                      <p>{isVi ? "Chưa chốt từ holdings" : "Unrealized holdings"}: <span className={summary.unrealizedPnl >= 0 ? "text-emerald-300" : "text-red-300"}>{fmtSignedMoney(summary.unrealizedPnl, baseCurrency)}</span></p>
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -438,10 +686,10 @@ export default function HoldingsPage() {
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
                     <div>
                       <CardTitle className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
-                        % thay &#273;&#7893;i h&#244;m nay
+                        {isVi ? "% thay đổi hôm nay" : "Today's Change %"}
                       </CardTitle>
                       <CardDescription className="mt-2 text-xs text-slate-400">
-                        Bi&#7871;n &#273;&#7897;ng trung b&#236;nh theo t&#7927; tr&#7885;ng t&#7915;ng m&#227;
+                        {isVi ? "Biến động trung bình theo tỷ trọng từng mã" : "Weighted average change of positions"}
                       </CardDescription>
                     </div>
                     <div className="rounded-2xl border border-violet-400/20 bg-violet-400/10 p-3 text-violet-300">
@@ -450,10 +698,10 @@ export default function HoldingsPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <p className={`text-3xl font-black ${summary.weightedTodayChange >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {formatSignedPercent(summary.weightedTodayChange)}
+                      {summary.weightedTodayChange >= 0 ? "+" : ""}{summary.weightedTodayChange.toFixed(2)}%
                     </p>
                     <p className="text-xs text-slate-400">
-                      Gi&#250;p nh&#236;n nhanh nh&#7883;p danh m&#7909;c trong ng&#224;y tr&#432;&#7899;c khi &#273;i v&#224;o t&#7915;ng m&#227;.
+                      {isVi ? "Giúp nhìn nhanh nhịp danh mục trong ngày trước khi đi vào từng mã." : "Quick overview of daily portfolio rhythm before diving into individual assets."}
                     </p>
                   </CardContent>
                 </Card>
@@ -465,7 +713,7 @@ export default function HoldingsPage() {
             <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                  <PieIcon size={16} className="text-blue-400" /> Phân bổ theo Ngành
+                  <PieIcon size={16} className="text-blue-400" /> {isVi ? "Phân bổ theo Ngành" : "Sector Allocation"}
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-[200px]">
@@ -477,7 +725,7 @@ export default function HoldingsPage() {
                           <Cell key={e.name} fill={e.fill} />
                         ))}
                       </Pie>
-                      <Tooltip content={<ChartTooltip valueFormatter={(v) => `$${Number(v).toLocaleString()}`} />} />
+                      <Tooltip content={<ChartTooltip valueFormatter={(v) => fmtMoney(Number(v), baseCurrency)} />} />
                     </PieChart>
                   </AutoSizedChart>
                 )}
@@ -488,7 +736,7 @@ export default function HoldingsPage() {
             <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                  <PieIcon size={16} className="text-emerald-400" /> Phân bổ theo Quốc gia
+                  <PieIcon size={16} className="text-emerald-400" /> {isVi ? "Phân bổ theo Quốc gia" : "Country Allocation"}
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-[200px]">
@@ -500,7 +748,7 @@ export default function HoldingsPage() {
                           <Cell key={e.name} fill={e.fill} />
                         ))}
                       </Pie>
-                      <Tooltip content={<ChartTooltip valueFormatter={(v) => `$${Number(v).toLocaleString()}`} />} />
+                      <Tooltip content={<ChartTooltip valueFormatter={(v) => fmtMoney(Number(v), baseCurrency)} />} />
                     </PieChart>
                   </AutoSizedChart>
                 )}
@@ -514,10 +762,10 @@ export default function HoldingsPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <CardTitle className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                        <BarChart size={16} className="text-purple-400" /> Khung 4 Trụ Cột — {topPosition.symbol}
+                        <BarChart size={16} className="text-purple-400" /> {isVi ? "Khung 4 Trụ Cột" : "4-Pillar Framework"} — {topPosition.symbol}
                       </CardTitle>
                       <CardDescription className="text-[10px] text-slate-500 mt-0.5">
-                        Cổ phiếu lớn nhất danh mục (Điểm: {(topPosition.totalScore / 20).toFixed(1)}/5.0)
+                        {isVi ? "Cổ phiếu lớn nhất danh mục" : "Largest portfolio position"} ({isVi ? "Điểm" : "Score"}: {(topPosition.totalScore / 20).toFixed(1)}/5.0)
                       </CardDescription>
                     </div>
                     {topRec && (
@@ -542,7 +790,7 @@ export default function HoldingsPage() {
                         <PolarGrid stroke="#1e293b" />
                         <PolarAngleAxis dataKey="pillar" tick={{ fill: "#cbd5e1", fontSize: 10 }} />
                         <PolarRadiusAxis angle={30} domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fill: "#475569", fontSize: 8 }} />
-                        <Radar name="Điểm" dataKey="score" stroke="#c44dff" fill="#c44dff" fillOpacity={0.25} />
+                        <Radar name={isVi ? "Điểm" : "Score"} dataKey="score" stroke="#c44dff" fill="#c44dff" fillOpacity={0.25} />
                       </RadarChart>
                     </AutoSizedChart>
                   )}
@@ -555,7 +803,7 @@ export default function HoldingsPage() {
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
               <Input
-                placeholder="Tìm theo mã hoặc tên tài sản..."
+                placeholder={isVi ? "Tìm theo mã hoặc tên tài sản..." : "Search by symbol or asset name..."}
                 className="pl-10 bg-slate-900 border-slate-800"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -565,7 +813,7 @@ export default function HoldingsPage() {
             {/* Active Filters Chips */}
             {(selectedIndustries.length > 0 || selectedCountries.length > 0) && (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-slate-500 uppercase mr-2">Đang lọc:</span>
+                <span className="text-xs font-bold text-slate-500 uppercase mr-2">{isVi ? "Đang lọc:" : "Filtering:"}</span>
                 {selectedIndustries.map(s => (
                   <Badge key={s} variant="secondary" className="bg-blue-500/20 text-blue-300 border-blue-500/30 px-2 py-1">
                     {s} <X className="ml-1 h-3 w-3 cursor-pointer" onClick={() => setSelectedIndustries(p => p.filter(x => x !== s))} />
@@ -577,7 +825,7 @@ export default function HoldingsPage() {
                   </Badge>
                 ))}
                 <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-slate-400 hover:text-white" onClick={() => { setSelectedIndustries([]); setSelectedCountries([]); }}>
-                  Xóa tất cả bộ lọc
+                  {isVi ? "Xóa tất cả bộ lọc" : "Clear all filters"}
                 </Button>
               </div>
             )}
@@ -593,13 +841,23 @@ export default function HoldingsPage() {
                   onToggleCountry={(c) => setSelectedCountries(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c])}
                   onClear={() => { setSelectedIndustries([]); setSelectedCountries([]); }}
                 />
-                <HoldingsTable data={filteredData} />
+                <HoldingsTable data={filteredData} currency={baseCurrency} />
               </div>
             </>
           )}
       </main>
+
+      {/* Draggable Divider Slider */}
+      <div 
+        onMouseDown={startResize}
+        className="w-1.5 hover:w-2 shrink-0 bg-white/5 hover:bg-cyan-500/40 cursor-col-resize transition-all duration-150 h-full relative z-50 group"
+        title="Drag to resize"
+      >
+        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[1px] bg-white/10 group-hover:bg-cyan-400" />
+      </div>
+
       <div className="flex-1 h-full overflow-y-auto bg-transparent border-l border-white/5">
-        <InstitutionalDetailPanel positions={positions} transactions={allTransactions} />
+        <InstitutionalDetailPanel positions={displayPositions} transactions={allTransactions} currency={baseCurrency} />
       </div>
     </div>
   );

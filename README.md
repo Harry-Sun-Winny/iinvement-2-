@@ -33,6 +33,16 @@ Design and product specs: **[docs/](docs/README.md)**
 
 ## Local Development
 
+### Windows local stack
+
+To start the local PostgreSQL service, backend, and frontend with one command:
+
+```powershell
+.\scripts\start-investment-platform.cmd
+```
+
+The launcher expects PostgreSQL on `5433` and reuses services already listening on `8080` (backend) and `3000` (frontend). It starts the Windows service named `postgresql-x64-18` only when PostgreSQL is unavailable; set `POSTGRES_SERVICE` before running the script if your installed service uses a different name.
+
 Backend:
 
 ```powershell

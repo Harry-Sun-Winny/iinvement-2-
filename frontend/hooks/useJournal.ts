@@ -131,20 +131,25 @@ export function useJournal(portfolioId: string, symbol?: string) {
     try {
       const files: Blob[] = []
       if (elementRef.current) {
-        const canvas = await html2canvas(elementRef.current, {
-          backgroundColor: '#0d1528',
-          scale: 2,
-        })
-        const blob = await new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob((value) => {
-            if (value) {
-              resolve(value)
-              return
-            }
-            reject(new Error('Failed to capture analysis image'))
-          }, 'image/png')
-        })
-        files.push(blob)
+        try {
+          const canvas = await html2canvas(elementRef.current, {
+            backgroundColor: '#0d1528',
+            scale: 2,
+            useCORS: true,
+          })
+          const blob = await new Promise<Blob>((resolve, reject) => {
+            canvas.toBlob((value) => {
+              if (value) {
+                resolve(value)
+                return
+              }
+              reject(new Error('Failed to capture analysis image'))
+            }, 'image/png')
+          })
+          files.push(blob)
+        } catch (captureErr) {
+          console.warn('Screenshot capture skipped:', captureErr)
+        }
       }
 
       await createEntry({
@@ -155,7 +160,8 @@ export function useJournal(portfolioId: string, symbol?: string) {
         imageType: 'screenshot',
       })
       toast.success('Da luu vao nhat ky', { id: toastId })
-    } catch {
+    } catch (err) {
+      console.error('Failed to save AI analysis:', err)
       toast.error('Luu that bai', { id: toastId })
     }
   }

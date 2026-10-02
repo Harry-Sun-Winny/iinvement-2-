@@ -63,8 +63,8 @@ function ExecutiveBanner({ score, verdict, symbol = "TICKER", name = "Stock Name
           <div className="text-right">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Composite Score</p>
             <div className="flex items-baseline gap-1 mt-1 justify-end">
-              <span className="text-3xl font-black text-white font-mono">{score.toFixed(2)}</span>
-              <span className="text-xs font-bold text-slate-500">/5.0</span>
+              <span className="text-3xl font-black text-white font-mono">{score.toFixed(0)}</span>
+              <span className="text-xs font-bold text-slate-500">/100</span>
             </div>
           </div>
 

@@ -1,4 +1,5 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { enforceRateLimit, readJsonBody, rejectCrossSiteRequest } from "../_lib/request-guard";
 
 type AnalysisMessage = { role: "user"; content: string };
 type AnalysisRequest = { analysisContext?: Record<string, unknown>; messages?: unknown[] };
@@ -106,10 +107,16 @@ async function requestGroq(apiKey: string, model: string, prompt: string, system
 
 export async function POST(request: NextRequest) {
   try {
+    const crossSite = rejectCrossSiteRequest(request);
+    if (crossSite) return crossSite;
+    const rateLimited = enforceRateLimit(request, { key: "ai-analysis", limit: 8, windowMs: 10 * 60_000 });
+    if (rateLimited) return rateLimited;
+    const parsedBody = await readJsonBody<unknown>(request, 250000);
+    if ("response" in parsedBody) return parsedBody.response;
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "GROQ_API_KEY chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh." }, { status: 503 });
 
-    const rawBody: unknown = await request.json();
+    const rawBody: unknown = parsedBody.body;
     const body: AnalysisRequest = isRecord(rawBody) ? rawBody : {};
     const analysisContext = body.analysisContext;
     const isStockAnalysis = analysisContext?.analysisType === "stock";

@@ -52,6 +52,12 @@
 **I want to** see current holdings with quantity, average cost, and gain/loss  
 **So that** I know how each position is performing  
 
+**Acceptance criteria:**
+- Dashboard, aggregate Holdings, and portfolio detail show the latest completed/current session change versus the previous close
+- Summary includes value and percentage change, advancing/declining/unchanged counts, and the highest/lowest contributor
+- Assets without a reliable previous close are excluded and identified; the UI does not invent a price
+- The summary states that market data may be delayed and is informational, not financial advice
+
 ### US-2.4 Edit transaction
 **As a** retail investor  
 **I want to** correct a mistyped transaction  

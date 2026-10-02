@@ -3,10 +3,10 @@ setlocal
 
 set "PG_BIN=C:\Program Files\PostgreSQL\18\bin"
 set "PGHOST=localhost"
-set "PGPORT=5433"
+set "PGPORT=5432"
 set "PGDATABASE=investment"
-set "PGUSER=postgres"
-set "PGPASSWORD=postgres123"
+set "PGUSER=investment"
+set "PGPASSWORD=investment_dev_password"
 
 set "BACKUP_ROOT=%~dp0..\backups"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do set "STAMP=%%i"

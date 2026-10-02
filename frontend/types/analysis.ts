@@ -1,6 +1,6 @@
 import type { Portfolio } from "@/app/lib/api";
 
-export interface StockData { symbol: string; price: number; change: number; changePercent: number; }
+export interface StockData { symbol: string; price: number; change: number; changePercent: number; currency: string; previousClose?: number | null; }
 export interface PositionSummary {
   symbol: string;
   name: string;

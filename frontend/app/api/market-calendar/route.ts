@@ -1,7 +1,8 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { CalendarCategory, CalendarImpact, MarketCalendarEvent } from "@/types/calendar";
 
 const FINNHUB_BASE = "https://finnhub.io/api/v1";
+const FMP_BASE = "https://financialmodelingprep.com/stable";
 
 function addDays(date: string, days: number) {
   const value = new Date(`${date}T00:00:00Z`);
@@ -104,12 +105,84 @@ function fallbackEvents(category: CalendarCategory, from: string, to: string): M
   ];
 }
 
+// Helper to parse CSV string into array of objects
+function parseCsv(csvText: string): Record<string, string>[] {
+  const lines = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",");
+  return lines.slice(1).map(line => {
+    const values = line.split(",");
+    const obj: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      obj[header] = values[index] ?? "";
+    });
+    return obj;
+  });
+}
+
+// ─── Alpha Vantage: Earnings & IPO ──────────────────────────────────────────
+
+async function fetchAlphaVantage(category: "earnings" | "ipo", from: string, to: string, token: string): Promise<MarketCalendarEvent[]> {
+  const func = category === "earnings" ? "EARNINGS_CALENDAR" : "IPO_CALENDAR";
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const url = `https://www.alphavantage.co/query?function=${func}&apikey=${token}`;
+    const response = await fetch(url, { signal: controller.signal, next: { revalidate: 300 } });
+    clearTimeout(timeoutId);
+    if (!response.ok) throw new Error(`AlphaVantage ${response.status}`);
+    const text = await response.text();
+    const parsed = parseCsv(text);
+
+    return parsed
+      .map((row, index) => {
+        if (category === "earnings") {
+          // Fields: symbol,name,reportDate,fiscalDateEnding,estimate,currency,timeOfTheDay
+          const dateVal = row.reportDate || from;
+          const estEps = parseFloat(row.estimate);
+          const rawSession = String(row.timeOfTheDay || "").toLowerCase();
+          const session = rawSession.includes("pre") ? "Before Market Open" : rawSession.includes("post") ? "After Market Close" : "During Market";
+          return baseEvent("earnings", dateVal, `${row.symbol} Earnings`, index, {
+            symbol: row.symbol,
+            company: row.name || row.symbol,
+            session,
+            epsEstimate: isNaN(estEps) ? null : estEps,
+            impact: "High",
+            sector: "Equities",
+            eventType: "Earnings",
+            volatilityScore: 80,
+            time: rawSession.includes("pre") ? "07:30" : "16:15",
+          });
+        } else {
+          // Fields: symbol,name,ipoDate,priceRangeLow,priceRangeHigh,currency,exchange
+          const dateVal = row.ipoDate || from;
+          const range = row.priceRangeLow && row.priceRangeHigh ? `$${row.priceRangeLow} - $${row.priceRangeHigh}` : "N/A";
+          return baseEvent("ipo", dateVal, `${row.name || row.symbol} IPO`, index, {
+            symbol: row.symbol,
+            company: row.name,
+            exchange: row.exchange,
+            priceRange: range,
+            eventType: "IPO",
+            volatilityScore: 60,
+          });
+        }
+      })
+      .filter(event => event.date >= from && event.date <= to);
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+// ─── Finnhub: Economic, Earnings, IPO (Legacy Fallback) ──────────────────────
+
 async function fetchFinnhub(category: CalendarCategory, from: string, to: string, token: string): Promise<MarketCalendarEvent[]> {
   const endpoint = category === "economic" ? "calendar/economic" : category === "earnings" ? "calendar/earnings" : category === "ipo" ? "calendar/ipo" : null;
   if (!endpoint) return [];
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4000);
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
 
   try {
     const response = await fetch(`${FINNHUB_BASE}/${endpoint}?from=${from}&to=${to}&token=${token}`, { 
@@ -140,24 +213,170 @@ async function fetchFinnhub(category: CalendarCategory, from: string, to: string
   }
 }
 
+// ─── FMP: Dividends Calendar (real data with exact dates) ───────────────────
+
+async function fetchFmpDividends(from: string, to: string, apiKey: string): Promise<MarketCalendarEvent[]> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const url = `${FMP_BASE}/dividends-calendar?from=${from}&to=${to}&apikey=${apiKey}`;
+    const response = await fetch(url, { signal: controller.signal, next: { revalidate: 300 } });
+    clearTimeout(timeoutId);
+    if (!response.ok) throw new Error(`FMP dividends ${response.status}`);
+    const data: any[] = await response.json();
+    if (!Array.isArray(data)) return [];
+
+    return data.map((row: any, index: number) => {
+      const exDate = String(row.date || "").slice(0, 10);
+      const payDate = String(row.paymentDate || "").slice(0, 10);
+      const recordDate = String(row.recordDate || "").slice(0, 10);
+      const symbol = String(row.symbol || "").toUpperCase();
+      const dividendAmount = parseFloat(row.dividend) || parseFloat(row.adjDividend) || 0;
+      const yieldPct = parseFloat(row.yield) || 0;
+      const freq = row.frequency || "";
+
+      return baseEvent("dividends", exDate, `${symbol} Dividend Ex-Date`, index, {
+        symbol,
+        company: symbol,
+        exDate,
+        payDate: payDate || null,
+        dividend: Math.round(dividendAmount * 10000) / 10000,
+        yield: Math.round(yieldPct * 100) / 100,
+        impact: dividendAmount >= 1 ? "High" : dividendAmount >= 0.3 ? "Medium" : "Low",
+        sector: "Equities",
+        eventType: freq ? `Dividend (${freq})` : "Dividend",
+        volatilityScore: dividendAmount >= 1 ? 45 : dividendAmount >= 0.3 ? 32 : 20,
+        affectedSectors: ["Equities"],
+        actual: `$${dividendAmount.toFixed(4)}`,
+        forecast: yieldPct > 0 ? `${yieldPct.toFixed(2)}%` : null,
+        previous: recordDate || null,
+      });
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+// ─── FMP: Splits Calendar (real data with exact dates) ──────────────────────
+
+async function fetchFmpSplits(from: string, to: string, apiKey: string): Promise<MarketCalendarEvent[]> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const url = `${FMP_BASE}/splits-calendar?from=${from}&to=${to}&apikey=${apiKey}`;
+    const response = await fetch(url, { signal: controller.signal, next: { revalidate: 300 } });
+    clearTimeout(timeoutId);
+    if (!response.ok) throw new Error(`FMP splits ${response.status}`);
+    const data: any[] = await response.json();
+    if (!Array.isArray(data)) return [];
+
+    return data.map((row: any, index: number) => {
+      const splitDate = String(row.date || "").slice(0, 10);
+      const symbol = String(row.symbol || "").toUpperCase();
+      const numerator = row.numerator ?? row.toFactor ?? "";
+      const denominator = row.denominator ?? row.fromFactor ?? "";
+      const ratio = numerator && denominator ? `${numerator}:${denominator}` : (row.ratio || "N/A");
+
+      return baseEvent("splits", splitDate, `${symbol} Stock Split`, index, {
+        symbol,
+        company: row.label || row.name || symbol,
+        exDate: splitDate,
+        ratio,
+        impact: "Medium",
+        sector: "Equities",
+        eventType: "Stock Split",
+        volatilityScore: 55,
+        affectedSectors: ["Equities"],
+      });
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+// ─── Main GET handler ───────────────────────────────────────────────────────
+
 export async function GET(request: NextRequest) {
   const category = (request.nextUrl.searchParams.get("category") || "economic") as CalendarCategory;
   const from = request.nextUrl.searchParams.get("from") || new Date().toISOString().slice(0, 10);
   const to = request.nextUrl.searchParams.get("to") || from;
-  const token = process.env.FINNHUB_API_KEY;
+  const finnhubToken = process.env.FINNHUB_API_KEY;
+  const fmpKey = process.env.FMP_API_KEY;
+  const alphaVantageKey = process.env.ALPHA_VANTAGE_API_KEY;
+  
   let events: MarketCalendarEvent[] = [];
   let source = "Curated fallback";
+  let hasFailed = false;
 
-  if (token) {
+  // 1. Check if category is Earnings/IPO -> Call Alpha Vantage (FREE)
+  if (alphaVantageKey && (category === "earnings" || category === "ipo")) {
     try {
-      events = await fetchFinnhub(category, from, to, token);
-      if (events.length) source = "Finnhub";
-    } catch {
-      events = [];
+      events = await fetchAlphaVantage(category, from, to, alphaVantageKey);
+      source = "Alpha Vantage";
+    } catch (e) {
+      console.error("[market-calendar] Alpha Vantage error:", e);
+      hasFailed = true;
     }
   }
 
-  if (!events.length) events = fallbackEvents(category, from, to);
+  // 2. If Alpha Vantage failed or wasn't run, try Finnhub (as backup)
+  if (!events.length && finnhubToken && (category === "economic" || category === "earnings" || category === "ipo")) {
+    try {
+      events = await fetchFinnhub(category, from, to, finnhubToken);
+      source = "Finnhub";
+      hasFailed = false; // Reset failure if backup works
+    } catch (e) {
+      console.error("[market-calendar] Finnhub error:", e);
+      hasFailed = true;
+    }
+  } else if (!events.length && (category === "economic" || category === "earnings" || category === "ipo") && !alphaVantageKey) {
+    hasFailed = true;
+  }
+
+  // FMP: dividends (real calendar data with exact ex-dates and pay-dates)
+  if (fmpKey && category === "dividends") {
+    try {
+      events = await fetchFmpDividends(from, to, fmpKey);
+      source = "FMP";
+    } catch (e) {
+      console.error("[market-calendar] FMP dividends error:", e);
+      hasFailed = true;
+    }
+  } else if (category === "dividends") {
+    hasFailed = true;
+  }
+
+  // FMP: splits (real calendar data with exact split dates and ratios)
+  if (fmpKey && category === "splits") {
+    try {
+      events = await fetchFmpSplits(from, to, fmpKey);
+      source = "FMP";
+    } catch (e) {
+      console.error("[market-calendar] FMP splits error:", e);
+      hasFailed = true;
+    }
+  } else if (category === "splits") {
+    hasFailed = true;
+  }
+
+  // Other categories (holidays, options) that don't have API integration yet
+  if (category === "holidays" || category === "options") {
+    hasFailed = true;
+  }
+
+  if (hasFailed && !events.length) {
+    events = fallbackEvents(category, from, to);
+    source = "Curated fallback";
+  }
+
   events = events.filter(event => event.date >= from && event.date <= to);
+
+  // Sort by date ascending (like investing.com)
+  events.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+
   return NextResponse.json({ events, source, updatedAt: new Date().toISOString() });
 }

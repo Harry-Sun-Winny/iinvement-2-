@@ -1,0 +1,188 @@
+/* Size against the space left by the fixed app sidebar. */
+.viewport {
+  flex: 1;
+  min-width: 0;
+  height: 100dvh;
+  overflow: hidden;
+  container: dashboard / inline-size;
+}
+
+.split {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: 1920px;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.primaryPane,
+.secondaryPane {
+  min-width: 0;
+  padding: 20px 16px 64px;
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+
+.secondaryPane {
+  border-top: 1px solid var(--border, rgb(255 255 255 / 8%));
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border, rgb(255 255 255 / 8%));
+}
+
+.header > *,
+.primaryPane > *,
+.secondaryPane > *,
+.metrics > *,
+.analytics > *,
+.activity > * {
+  min-width: 0;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.metrics,
+.analytics,
+.activity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.metrics {
+  gap: 12px;
+  grid-auto-rows: max-content;
+}
+
+.analytics,
+.activity {
+  gap: 16px;
+}
+
+.metrics > :global([data-dashboard-metric]) {
+  height: 100%;
+  min-height: 116px;
+  overflow-wrap: anywhere;
+}
+
+.metrics > :global([data-dashboard-detail]) {
+  grid-column: 1 / -1;
+  height: auto;
+  overflow-wrap: anywhere;
+}
+
+.metrics :global(.text-xl) {
+  font-size: clamp(1.2rem, 2.2cqi, 1.65rem);
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace {
+  min-width: 0;
+}
+
+.activity {
+  overflow-wrap: anywhere;
+}
+
+.activity :global(.sm\:grid-cols-2) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+/* Let the left page scrollbar own vertical navigation; tables only scroll sideways. */
+.workspace :global([data-slot="table-container"]) {
+  max-height: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.workspace :global([data-slot="table-head"]),
+.workspace :global([data-slot="table-cell"]) {
+  font-variant-numeric: tabular-nums;
+}
+
+@container dashboard (max-width: 599px) {
+  .workspace :global([data-slot="table-head"]:nth-child(2)),
+  .workspace :global([data-slot="table-cell"]:nth-child(2)) {
+    position: static;
+  }
+
+  .workspace :global([data-slot="table-head"]:first-child),
+  .workspace :global([data-slot="table-cell"]:first-child) {
+    width: 76px;
+    min-width: 76px;
+    max-width: 76px;
+  }
+
+  .workspace :global(.sm\:grid-cols-2) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace :global(.antigravity-panel) > :global(.flex.items-center.justify-between) {
+    flex-wrap: wrap;
+  }
+}
+
+@container dashboard (min-width: 480px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Desktop remains one continuous page with a single vertical scrollbar. */
+@container dashboard (min-width: 900px) {
+  .primaryPane,
+  .secondaryPane {
+    padding-inline: 24px;
+    gap: 24px;
+  }
+
+  .primaryPane {
+    padding-top: 28px;
+    padding-bottom: 24px;
+  }
+
+  .secondaryPane {
+    padding-top: 24px;
+    padding-bottom: 80px;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .analytics,
+  .activity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.viewport :is(button, summary, a):focus-visible {
+  outline: 2px solid var(--accent, #22d3ee);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewport *,
+  .viewport *::before,
+  .viewport *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

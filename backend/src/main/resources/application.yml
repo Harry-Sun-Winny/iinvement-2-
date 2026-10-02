@@ -2,7 +2,7 @@ spring:
   application:
     name: investment-platform
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5434/investment}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/investment}
     username: ${SPRING_DATASOURCE_USERNAME:investment}
     password: ${SPRING_DATASOURCE_PASSWORD:investment_dev_password}
   jpa:
@@ -13,6 +13,10 @@ spring:
     enabled: true
     baseline-on-migrate: true
     out-of-order: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   data:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
@@ -22,6 +26,13 @@ security:
   jwt:
     secret: ${SECURITY_JWT_SECRET:local-development-secret-change-before-production}
     ttl-minutes: ${SECURITY_JWT_TTL_MINUTES:360}
+  refresh-token:
+    ttl-days: ${SECURITY_REFRESH_TOKEN_TTL_DAYS:30}
+  bootstrap-admin:
+    enabled: ${SECURITY_BOOTSTRAP_ADMIN_ENABLED:false}
+    email: ${SECURITY_BOOTSTRAP_ADMIN_EMAIL:}
+    password: ${SECURITY_BOOTSTRAP_ADMIN_PASSWORD:}
+    full-name: ${SECURITY_BOOTSTRAP_ADMIN_FULL_NAME:Local Administrator}
 
 openai:
   api-key: ${OPENAI_API_KEY:}

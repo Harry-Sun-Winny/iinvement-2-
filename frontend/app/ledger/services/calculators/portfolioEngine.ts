@@ -153,7 +153,7 @@ export function calculateHistoricalPerformance(
   const currentYear = today.getFullYear();
   const currentMonth = today.getMonth();
 
-  const historyPoints: { year: string; costBasis: number; marketValue: number }[] = [];
+  const historyPoints: { year: string; costBasis: number; marketValue: number; pnl: number; buyAmount: number; sellAmount: number; buyMarker: number | null; sellMarker: number | null }[] = [];
 
   while (y < currentYear || (y === currentYear && m <= currentMonth)) {
     // Get the exact last millisecond of the month using new Date(year, monthIndex + 1, 0)
@@ -213,13 +213,23 @@ export function calculateHistoricalPerformance(
 
     const costBasis = costBasisStocks + bondsCostBasis;
     const marketValue = marketValueStocks + bondsMarketValue;
+    const monthTransactions = activeTx.filter((transaction) => {
+      const date = new Date(transaction.transactionDate);
+      return date.getFullYear() === y && date.getMonth() === m;
+    });
+    const buyAmount = monthTransactions.filter((transaction) => transaction.type === "BUY").reduce((sum, transaction) => sum + transaction.quantity * transaction.price * getCurrencyConversionFactor(transaction.symbol, baseCurrency), 0);
+    const sellAmount = monthTransactions.filter((transaction) => transaction.type === "SELL").reduce((sum, transaction) => sum + transaction.quantity * transaction.price * getCurrencyConversionFactor(transaction.symbol, baseCurrency), 0);
 
     historyPoints.push({
-      year: `${String(m + 1).padStart(2, '0')}/${y}`,
+      year: `${String(m + 1).padStart(2, "0")}/${y}`,
       costBasis,
-      marketValue
+      marketValue,
+      pnl: marketValue - costBasis,
+      buyAmount,
+      sellAmount,
+      buyMarker: buyAmount > 0 ? marketValue : null,
+      sellMarker: sellAmount > 0 ? marketValue : null,
     });
-
     // Advance by 1 month
     m++;
     if (m > 11) {

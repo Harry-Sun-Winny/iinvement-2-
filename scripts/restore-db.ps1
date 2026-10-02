@@ -5,29 +5,38 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Ensure the backup file exists
+$PgBin = "C:\Program Files\PostgreSQL\18\bin"
+$PgRestore = Join-Path $PgBin "pg_restore.exe"
+$Psql = Join-Path $PgBin "psql.exe"
+$TargetHost = "localhost"
+$TargetPort = "5432"
+$TargetDatabase = "investment"
+$TargetUser = "investment"
+
 $BackupFileFullPath = Resolve-Path $BackupFile
 if (-not (Test-Path -LiteralPath $BackupFileFullPath -PathType Leaf)) {
     throw "Backup file not found: $BackupFile"
 }
+if (-not (Test-Path -LiteralPath $PgRestore -PathType Leaf) -or -not (Test-Path -LiteralPath $Psql -PathType Leaf)) {
+    throw "PostgreSQL 18 client tools were not found at $PgBin"
+}
 
-Write-Host "Starting database restoration..."
-Write-Host "Backup file: $BackupFileFullPath"
+$env:PGPASSWORD = "investment_dev_password"
+Write-Host "Restoring custom .backup into PostgreSQL $TargetHost`:$TargetPort/$TargetDatabase..."
 
-# 1. Clear the existing database schema to ensure clean restore
-Write-Host "Cleaning existing database schema..."
-docker compose exec -T postgres psql -U investment -d investment -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+# The generated SQL is sent within one transaction. PostgreSQL 18 backups include a
+# transaction_timeout setting that PostgreSQL 16 does not recognize, so filter that line.
+& {
+    "BEGIN;"
+    "DROP SCHEMA public CASCADE;"
+    "CREATE SCHEMA public;"
+    & $PgRestore --no-owner --no-privileges --file=- $BackupFileFullPath
+    "COMMIT;"
+} | Where-Object { $_ -ne "SET transaction_timeout = 0;" } |
+    & $Psql --host $TargetHost --port $TargetPort --username $TargetUser --dbname $TargetDatabase --set ON_ERROR_STOP=1
 
-# 2. Copy the backup file to the database container
-Write-Host "Copying backup file to container..."
-docker compose cp $BackupFileFullPath postgres:/tmp/backup.sql.gz
+if ($LASTEXITCODE -ne 0) {
+    throw "Database restoration failed and was rolled back."
+}
 
-# 3. Restore using gunzip and psql
-Write-Host "Restoring data..."
-docker compose exec -T postgres sh -c "gunzip -c /tmp/backup.sql.gz | psql -U investment -d investment"
-
-# 4. Clean up temporary file in the container
-Write-Host "Cleaning up temporary files..."
-docker compose exec -T postgres rm /tmp/backup.sql.gz
-
-Write-Host "Database restoration complete!"
+Write-Host "Database restoration complete. Start the backend so Flyway can apply any newer migrations."

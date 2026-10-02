@@ -1,6 +1,8 @@
+
 package com.acme.investment.infrastructure.security;
 import com.acme.investment.infrastructure.persistence.UserJpaRepository;
 import java.util.List;
+import org.springframework.http.HttpMethod;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -47,13 +49,14 @@ public class SecurityConfig {
         return http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .headers(headers -> headers.disable())
+                .headers(headers -> { })
                 .sessionManagement(session -> session.sessionCreationPolicy(
                      org.springframework.security.config.http.SessionCreationPolicy.STATELESS))
                 .exceptionHandling(handler -> handler
                         .authenticationEntryPoint(authenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/error", "/api/v1/auth/**", "/api/v1/market/**", "/api/v1/admin/kpi", "/v3/api-docs/**", "/v3/api-docs.yaml", "/swagger-ui/**", "/swagger-ui.html", "/swagger-resources/**", "/webjars/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/research/catalog/import").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
@@ -82,3 +85,6 @@ public class SecurityConfig {
         return new ProviderManager(List.of(provider));
     }
 }
+
+
+

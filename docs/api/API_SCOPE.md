@@ -12,6 +12,7 @@ REST API map organized by domain. Base path: `/api/v1`.
 | Watchlist | `/api/v1/watchlists` | JWT | ✅ Implemented |
 | Goal | `/api/v1/goals` | JWT | ✅ Implemented |
 | News | `/api/v1/news` | JWT | ✅ Implemented |
+| Research Intelligence | `/api/v1/research` | JWT (catalog import: Admin) | ✅ Implemented |
 | AI Analysis | `/api/v1/portfolios/{id}/analysis` | JWT | ✅ Implemented |
 | Asset | `/api/v1/assets` | JWT | 🔜 Planned |
 | AI Chat | `/api/v1/ai/conversations` | JWT (Premium+) | 🔜 Planned |
@@ -102,6 +103,21 @@ Query params: `?asset=BTC&tag=earnings&from=2026-01-01&limit=20`
 
 ---
 
+## /api/v1/research
+
+| Method | Path | Description | Role |
+|--------|------|-------------|------|
+| GET | `/{symbol}/profile` | Point-in-time profile and research context; does not write a run | USER+ |
+| GET | `/{symbol}/parameters` | Provider-mapped observations, evidence status, source citation, and warnings | USER+ |
+| GET | `/{symbol}/score` | Governed scorecard; a null overall score means insufficient evidence | USER+ |
+| POST | `/{symbol}/runs` | Calculate and persist an immutable, private research snapshot | USER+ |
+| GET | `/{symbol}/runs/latest` | Read only the caller's most recent saved snapshot for the symbol | USER+ |
+| POST | `/catalog/import` | Validate and atomically upsert the complete 3,600-row DOCX dictionary | ADMIN |
+
+The catalog import rejects a partial, duplicate, malformed, or non-DOCX dictionary. It records an audit entry and never stores the uploaded document. Current scoring activates only provider-mapped proxy observations; all other documented entries remain unscored until a data-source mapping is approved.
+
+---
+
 ## /api/v1/ai (planned)
 
 | Method | Path | Description | Role |
@@ -156,8 +172,33 @@ Query params: `?asset=BTC&tag=earnings&from=2026-01-01&limit=20`
 | Docs | OpenAPI 3 at `/swagger-ui.html` |
 | Versioning | URL prefix `/api/v1` |
 
+### Web market-data BFF performance
+
+The Next.js web client uses internal `/api/stock-*` routes as a provider-facing
+BFF; these routes are not part of the public Spring Boot `/api/v1` contract.
+Dashboard quote reads use `GET /api/stock-price?symbols=AAPL,MSFT` (maximum 40
+symbols per batch). Live quotes, FX rates, history, fundamentals, dividends, and
+news use bounded TTL caching plus in-flight request coalescing. See
+[Data Loading Performance](../architecture/DATA_LOADING_PERFORMANCE.md) for the
+sequence and cache policy.
+
+The daily session summary is computed client-side from this BFF response using
+`price`, `previousClose`, `change`, `changePercent`, `currency`, and `asOf`.
+Positions without a valid `previousClose` are reported as unavailable and are
+not included in aggregate session performance. This does not add a public
+Spring Boot endpoint or persist market-price data.
+
 ## OpenAPI
 
 Canonical contract: `backend/src/main/resources/openapi/investment-api.yaml`
 
 Extend this file as endpoints are implemented. Frontend and mobile clients generate types from this spec.
+
+## Transaction CSV Import (implemented)
+
+| Method | Path | Description | Role |
+|--------|------|-------------|------|
+| POST | `/import/preview` | Validate and normalize up to 500 rows; no transaction is written | PREMIUM, ADMIN |
+| POST | `/import/commit` | Revalidate, atomically create rows, audit each row, recalculate holdings once | PREMIUM, ADMIN |
+
+The client must present preview errors to the user and only enable commit when `readyToImport` is true. Ownership is verified for the target portfolio on both endpoints.

@@ -1,7 +1,9 @@
 "use client";
 
 import React from "react";
-import { TrendingUp } from "lucide-react";
+import { Check, TrendingUp } from "lucide-react";
+import LanguageSwitcher from "@/components/ui/LanguageSwitcher";
+import { useTranslation } from "@/components/providers/I18nProvider";
 import { DESIGN_TOKENS } from "@/lib/design-tokens";
 
 interface AuthLayoutProps {
@@ -19,77 +21,100 @@ export default function AuthLayout({
   formSubtitle,
   children,
 }: AuthLayoutProps) {
+  const { language } = useTranslation();
+  const isVi = language === "vi";
+  const benefits = isVi
+    ? [
+        "Quản lý danh mục và hiệu suất tập trung",
+        "Phân tích thông tin với nguồn tham chiếu",
+        "Không thực hiện lệnh mua bán tài sản",
+      ]
+    : [
+        "Centralized portfolio and performance tracking",
+        "Analysis with referenced information sources",
+        "No asset trading or order execution",
+      ];
+
   return (
     <main
-      className="min-h-screen w-full flex items-center justify-center relative bg-[var(--panel)] p-4 md:p-8"
+      className="relative min-h-[100dvh] w-full overflow-y-auto bg-[#070b14] text-slate-100"
       style={{ zIndex: DESIGN_TOKENS.zIndex.base }}
     >
-      {/* Centered card layout */}
       <div
-        className="grid w-full max-w-5xl overflow-hidden rounded-[14px] border md:grid-cols-[1.1fr_1fr]"
-        style={{
-          backgroundColor: "var(--panel)",
-          borderColor: "var(--border)",
-          boxShadow: DESIGN_TOKENS.shadow.lg,
-        }}
-      >
-        {/* Left column - Info panel */}
-        <section
-          className="hidden p-10 md:flex flex-col justify-between border-r text-white relative overflow-hidden"
-          style={{
-            backgroundColor: "var(--card)",
-            borderColor: "var(--border)",
-          }}
-        >
-          {/* Logo Brand */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="relative flex h-8 w-8 items-center justify-center rounded bg-gradient-to-br from-amber-400 to-orange-500 shadow-md">
-              <TrendingUp className="h-4 w-4 text-white" />
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(125deg,rgba(255,255,255,0.035),transparent_38%),radial-gradient(circle_at_20%_20%,color-mix(in_srgb,var(--accent)_10%,transparent),transparent_32%)]"
+      />
+
+      <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-7xl flex-col px-4 py-5 sm:px-6 lg:px-10 lg:py-7">
+        <header className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+              <TrendingUp className="h-5 w-5 text-[var(--accent)]" strokeWidth={2} />
             </div>
-            <div>
-              <p className="text-sm font-black tracking-widest uppercase">
-                Antigravity
+            <div className="min-w-0">
+              <p className="truncate text-sm font-extrabold tracking-[0.14em] text-slate-100">
+                ANTIGRAVITY
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                Portfolio workspace
               </p>
             </div>
           </div>
+          <LanguageSwitcher />
+        </header>
 
-          {/* Slogan */}
-          <div className="my-16 space-y-4">
-            <h1 className="text-4xl font-extrabold tracking-tight leading-tight">
+        <div className="grid flex-1 items-center gap-10 py-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.78fr)] lg:gap-16 lg:py-10">
+          <section className="hidden max-w-xl lg:block" aria-labelledby="auth-value-heading">
+            <p className="text-sm font-semibold text-[var(--accent)]">
+              {isVi ? "Không gian quyết định tài chính" : "Financial decision workspace"}
+            </p>
+            <h1
+              id="auth-value-heading"
+              className="mt-5 max-w-[13ch] text-4xl font-extrabold leading-[1.08] tracking-[-0.035em] text-slate-50 xl:text-5xl"
+            >
               {title}
             </h1>
-            <p className="text-slate-400 text-sm leading-relaxed">
-              Hệ thống điều khiển danh mục quỹ chuyên nghiệp.
+            <p className="mt-5 max-w-[54ch] text-base leading-7 text-slate-400">
+              {subtitle}
             </p>
-          </div>
 
-          {/* Slogan Footer info */}
-          <div className="flex items-center gap-2.5 text-xs font-bold text-[var(--accent)] tracking-wide">
-            <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
-            <span>{subtitle}</span>
-          </div>
-        </section>
+            <ul className="mt-8 grid gap-3" aria-label={isVi ? "Khả năng của nền tảng" : "Platform capabilities"}>
+              {benefits.map((benefit) => (
+                <li key={benefit} className="flex items-center gap-3 text-sm font-medium text-slate-300">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-[var(--accent)]">
+                    <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+                  </span>
+                  <span>{benefit}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
 
-        {/* Right column - Form */}
-        <section className="p-8 flex flex-col justify-center bg-[var(--panel)]">
-          <div className="space-y-6">
-            <div>
-              <p className="text-xs font-bold text-[var(--accent)] uppercase tracking-widest">
-                Workspace Portal
-              </p>
-              <h2 className="mt-2 text-2xl font-black text-white tracking-wide">
-                {formTitle}
-              </h2>
-              {formSubtitle && (
-                <p className="mt-1.5 text-xs text-slate-400 font-medium">
-                  {formSubtitle}
-                </p>
-              )}
+          <section className="mx-auto w-full max-w-[470px]" aria-labelledby="auth-form-heading">
+            <div className="rounded-2xl border border-white/10 bg-[#0c121f]/95 p-6 shadow-[0_24px_70px_rgba(2,6,23,0.42),inset_0_1px_0_rgba(255,255,255,0.045)] sm:p-8">
+              <div>
+                <h2 id="auth-form-heading" className="text-2xl font-extrabold tracking-[-0.025em] text-slate-50">
+                  {formTitle}
+                </h2>
+                {formSubtitle && (
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    {formSubtitle}
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-7">
+                {children}
+              </div>
             </div>
 
-            {children}
-          </div>
-        </section>
+            <p className="mx-auto mt-5 max-w-sm text-center text-xs leading-5 text-slate-400">
+              {isVi
+                ? "Nền tảng hỗ trợ quản lý và phân tích danh mục, không thực hiện giao dịch tài sản."
+                : "This platform supports portfolio management and analysis. It does not execute asset trades."}
+            </p>
+          </section>
+        </div>
       </div>
     </main>
   );

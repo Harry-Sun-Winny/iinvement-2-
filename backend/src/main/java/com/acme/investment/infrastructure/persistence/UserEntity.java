@@ -54,5 +54,13 @@ public class UserEntity {
     public String getRole() {
         return role;
     }
-}
 
+    /** Elevation is intentionally explicit; public registration always keeps the USER default. */
+    public boolean promoteToAdmin() {
+        if ("ADMIN".equals(role)) {
+            return false;
+        }
+        role = "ADMIN";
+        return true;
+    }
+}

@@ -1,0 +1,46 @@
+/* Keep long lists inside their own viewport, not outside the ledger page. */
+.scrollArea {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(55dvh, 32rem);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior-x: contain;
+}
+
+.scrollArea::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.table {
+  width: 100%;
+  min-width: 60rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.detailsTable {
+  min-width: 76rem;
+}
+
+.table th,
+.table td {
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border, rgb(255 255 255 / 8%));
+}
+
+/* A solid themed surface keeps scrolling rows from showing through the header. */
+.table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--workspace-surface, var(--panel, #0f172a));
+}
+
+.scrollArea:focus-visible,
+.table button:focus-visible {
+  outline: 2px solid var(--accent, #818cf8);
+  outline-offset: -2px;
+}

@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+﻿import { useState, useEffect, useMemo } from "react";
+import { Copy, Sparkles } from "lucide-react";
 import { HoldingExt } from "@/app/holdings/page";
 import {
   BarChart,
@@ -16,6 +17,8 @@ export function IncomeTab({ holding, marketData }: { holding: HoldingExt, market
 
   const [divHistory, setDivHistory] = useState<any[]>([]);
   const [loadingDiv, setLoadingDiv] = useState(false);
+  const [manualDividend, setManualDividend] = useState("");
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   useEffect(() => {
     setLoadingDiv(true);
@@ -32,7 +35,7 @@ export function IncomeTab({ holding, marketData }: { holding: HoldingExt, market
     ? (marketData.annualDividend / holding.avgCost) * 100 
     : null;
 
-  const annualDividend = marketData?.annualDividend || 0;
+  const annualDividend = marketData?.annualDividend || (Number(manualDividend) > 0 ? Number(manualDividend) : 0);
   const projectedAnnualIncome = holding.quantity * annualDividend;
 
   const monthlyProjection = useMemo(() => {
@@ -113,7 +116,7 @@ export function IncomeTab({ holding, marketData }: { holding: HoldingExt, market
                 </BarChart>
               </AutoSizedChart>
             ) : (
-              <span className="text-slate-600 text-xs">-- (No projected dividend income)</span>
+              <div className="max-w-[260px] text-center"><p className="text-xs text-slate-500">Chưa có dữ liệu cổ tức tự động.</p><div className="mt-2 flex items-center gap-2"><input type="number" min="0" step="any" value={manualDividend} onChange={e => setManualDividend(e.target.value)} placeholder="Cổ tức/năm mỗi cổ phiếu" className="min-w-0 rounded border border-white/10 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-400/60" /><button type="button" onClick={async () => { await navigator.clipboard?.writeText(`Tìm cổ tức tiền mặt thường niên gần nhất của ${holding.symbol}. Chỉ trả về số tiền cổ tức trên mỗi cổ phiếu.`); setCopiedPrompt(true); }} className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-cyan-200"><Sparkles className="h-3.5 w-3.5" /> AI</button></div>{copiedPrompt && <p className="mt-2 inline-flex items-center gap-1 text-xs text-cyan-200"><Copy className="h-3 w-3" /> Prompt đã sao chép, hãy dán kết quả vào ô.</p>}</div>
             )}
           </div>
         </div>
@@ -130,3 +133,5 @@ function MetricCard({ label, value }: { label: string, value: string }) {
     </div>
   );
 }
+
+

@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import YahooFinanceClass from "yahoo-finance2";
 import { httpsGet } from "../utils";
+import { marketRequestCache } from "../_lib/async-ttl-cache";
 const yahooFinance = new YahooFinanceClass();
 
 const USER_AGENT = "Mozilla/5.0 InvestmentPlatform/0.1";
+const HISTORY_TTL_MS = 15 * 60_000;
+const LONG_HISTORY_TTL_MS = 6 * 60 * 60_000;
+const FUNDAMENTALS_TTL_MS = 6 * 60 * 60_000;
+const HISTORY_RESPONSE_HEADERS = {
+  "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=3600",
+};
 const RANGE_MAP: Record<string, string> = {
   "1W": "1mo",
   "1w": "1mo",
@@ -32,16 +39,65 @@ const SYMBOL_ALIASES: Record<string, string> = {
   APPLE: "AAPL",
 };
 
-function getSymbolCandidates(symbol: string) {
-  const normalized = symbol.trim().toUpperCase();
+function getSymbolCandidates(symbol: string, preferredCurrency?: string | null) {
+  const raw = symbol.trim().toUpperCase();
+  // Strip trailing dots, commas, spaces (e.g. "AAPL." -> "AAPL")
+  const normalized = raw.replace(/[\s.,]+$/, "");
+  if (!normalized) return [];
+
   const alias = SYMBOL_ALIASES[normalized] ?? normalized;
-  if (alias.includes(".")) return [alias];
+
+  if (alias.includes(".")) {
+    const dashed = alias.replace(/\./g, "-");
+    return Array.from(new Set([alias, dashed, normalized]));
+  }
   if (/^\d{4,6}$/.test(alias)) return [`${alias}.TW`, `${alias}.TWO`, alias];
+
+  const currency = preferredCurrency?.trim().toUpperCase();
+  if (currency === "VND") return [`${alias}.VN`, alias];
+  if (currency === "TWD") return [`${alias}.TW`, `${alias}.TWO`, alias];
+
   return [alias, `${alias}.VN`];
 }
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+type HistoryPoint = {
+  date: string;
+  close: number | null;
+  adjustedClose: number | null;
+  volume: number | null;
+};
+
+type HistoryResult = {
+  symbol: string;
+  currency: string;
+  exchangeName?: string;
+  points: HistoryPoint[];
+};
+
+function normalizeHistoryPoints(points: Array<HistoryPoint | null | undefined>) {
+  return points
+    .filter((point): point is HistoryPoint => Boolean(point?.date))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .reduce<HistoryPoint[]>((acc, point) => {
+      const last = acc[acc.length - 1];
+      if (last?.date === point.date) {
+        acc[acc.length - 1] = point;
+      } else {
+        acc.push(point);
+      }
+      return acc;
+    }, []);
+}
+
+function compareHistoryQuality(a: HistoryResult, b: HistoryResult) {
+  const firstA = a.points[0]?.date ?? "9999-99-99";
+  const firstB = b.points[0]?.date ?? "9999-99-99";
+  if (a.points.length !== b.points.length) return b.points.length - a.points.length;
+  return firstA.localeCompare(firstB);
 }
 
 interface FundamentalPoint {
@@ -164,7 +220,7 @@ async function fetchYahooHistory(symbol: string, range: string, interval: "1d" |
   const currency = chart.meta.currency || "USD";
   const usdRate = await getUsdRate(currency);
 
-  const points = quotes
+  const points = normalizeHistoryPoints(quotes
     .map((q) => {
       const closeRaw = finiteNumber(q.close);
       const adjustedCloseRaw = finiteNumber(q.adjclose) ?? closeRaw;
@@ -181,9 +237,10 @@ async function fetchYahooHistory(symbol: string, range: string, interval: "1d" |
         volume,
       };
     })
-    .filter(Boolean);
+  );
 
   return {
+    symbol,
     currency: "USD",
     exchangeName: chart.meta.exchangeName,
     points,
@@ -193,47 +250,91 @@ async function fetchYahooHistory(symbol: string, range: string, interval: "1d" |
 async function fetchHistory(symbol: string, range: string) {
   if (range !== "max") {
     const history = await fetchYahooHistory(symbol, range, "1d");
-    return { symbol, ...history };
+    return history;
   }
 
-  const [longTerm, recent] = await Promise.all([
-    fetchYahooHistory(symbol, "max", "1mo"),
-    fetchYahooHistory(symbol, "5y", "1d"),
-  ]);
-  const recentStart = recent.points[0]?.date;
-  const points = recentStart
-    ? [...longTerm.points.filter(point => point && point.date < recentStart), ...recent.points]
-    : longTerm.points;
+  const candidates = await Promise.allSettled([
+    fetchYahooHistory(symbol, "max", "1d"),
+    (async () => {
+      const [longTerm, recent] = await Promise.all([
+        fetchYahooHistory(symbol, "max", "1mo"),
+        fetchYahooHistory(symbol, "5y", "1d"),
+      ]);
+      const recentStart = recent.points[0]?.date;
+      const points = normalizeHistoryPoints(
+        recentStart
+          ? [...longTerm.points.filter(point => point.date < recentStart), ...recent.points]
+          : longTerm.points,
+      );
 
-  return {
-    symbol,
-    currency: recent.currency || longTerm.currency,
-    exchangeName: recent.exchangeName || longTerm.exchangeName,
-    points,
-  };
+      return {
+        symbol,
+        currency: recent.currency || longTerm.currency,
+        exchangeName: recent.exchangeName || longTerm.exchangeName,
+        points,
+      };
+    })(),
+  ]);
+
+  const validHistories = candidates
+    .flatMap((result) => (
+      result.status === "fulfilled" && result.value.points.length > 0
+        ? [result.value as HistoryResult]
+        : []
+    ))
+    .sort(compareHistoryQuality);
+
+  if (validHistories.length === 0) {
+    const firstFailure = candidates.find(result => result.status === "rejected");
+    throw new Error(firstFailure?.status === "rejected" ? String(firstFailure.reason) : "Yahoo history missing data");
+  }
+
+  return validHistories[0];
 }
 
 export async function GET(req: NextRequest) {
   const symbol = req.nextUrl.searchParams.get("symbol");
   const rangeParam = req.nextUrl.searchParams.get("range") || "5Y";
+  const preferredCurrency = req.nextUrl.searchParams.get("preferredCurrency");
   const range = RANGE_MAP[rangeParam] ?? RANGE_MAP["5Y"];
 
   if (!symbol) return NextResponse.json({ error: "No symbol" }, { status: 400 });
 
+  const successfulResults: Array<{ history: HistoryResult; candidate: string }> = [];
   let lastError: unknown = null;
-  for (const candidate of getSymbolCandidates(symbol)) {
+  for (const candidate of getSymbolCandidates(symbol, preferredCurrency)) {
     try {
-      const history = await fetchHistory(candidate, range);
-      let fundamentals: FundamentalPoint[] = [];
-      try {
-        fundamentals = await fetchFundamentals(candidate);
-      } catch {
-        fundamentals = [];
-      }
-      return NextResponse.json({ ...history, fundamentals, requestedSymbol: symbol, resolvedSymbol: candidate });
+      const history = await marketRequestCache.getOrCreate(
+        `history:${candidate}:${range}`,
+        range === "max" ? LONG_HISTORY_TTL_MS : HISTORY_TTL_MS,
+        () => fetchHistory(candidate, range),
+      );
+      successfulResults.push({ history, candidate });
+      // Candidates are ordered by user preference. Stop after the first valid
+      // market instead of probing every exchange suffix on every page load.
+      break;
     } catch (error) {
       lastError = error;
     }
+  }
+
+  if (successfulResults.length > 0) {
+    successfulResults.sort((a, b) => compareHistoryQuality(a.history, b.history));
+    const best = successfulResults[0];
+    let fundamentals: FundamentalPoint[] = [];
+    try {
+      fundamentals = await marketRequestCache.getOrCreate(
+        `fundamentals:${best.candidate}`,
+        FUNDAMENTALS_TTL_MS,
+        () => fetchFundamentals(best.candidate),
+      );
+    } catch {
+      fundamentals = [];
+    }
+    return NextResponse.json(
+      { ...best.history, fundamentals, requestedSymbol: symbol, resolvedSymbol: best.candidate },
+      { headers: HISTORY_RESPONSE_HEADERS },
+    );
   }
 
   return NextResponse.json({
@@ -243,5 +344,5 @@ export async function GET(req: NextRequest) {
     points: [],
     error: "Failed to fetch history from Yahoo Finance",
     details: String(lastError)
-  });
+  }, { headers: HISTORY_RESPONSE_HEADERS });
 }

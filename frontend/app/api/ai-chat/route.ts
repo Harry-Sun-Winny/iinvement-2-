@@ -1,4 +1,5 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { enforceRateLimit, readJsonBody, rejectCrossSiteRequest } from "../_lib/request-guard";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -17,12 +18,18 @@ const DISCLAIMER = "\n\nLÆ°u Ã½: ThÃ´ng tin chá»‰ mang tÃ­nh tham kh
 
 export async function POST(request: NextRequest) {
   try {
+    const crossSite = rejectCrossSiteRequest(request);
+    if (crossSite) return crossSite;
+    const rateLimited = enforceRateLimit(request, { key: "ai-chat", limit: 12, windowMs: 10 * 60_000 });
+    if (rateLimited) return rateLimited;
+    const parsedBody = await readJsonBody<{ messages?: unknown }>(request, 80_000);
+    if ("response" in parsedBody) return parsedBody.response;
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: "OPENAI_API_KEY chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh trÃªn mÃ¡y chá»§." }, { status: 503 });
     }
 
-    const body = await request.json();
+    const body = parsedBody.body;
     if (!Array.isArray(body.messages)) {
       return NextResponse.json({ error: "Danh sÃ¡ch tin nháº¯n khÃ´ng há»£p lá»‡." }, { status: 400 });
     }

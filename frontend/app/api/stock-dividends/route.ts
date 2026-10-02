@@ -1,7 +1,12 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import YahooFinanceClass from 'yahoo-finance2';
 const yahooFinance = new YahooFinanceClass();
 import { NextRequest, NextResponse } from 'next/server';
+import { marketRequestCache } from '../_lib/async-ttl-cache';
+
+const DIVIDEND_TTL_MS = 6 * 60 * 60_000;
+const DIVIDEND_RESPONSE_HEADERS = {
+  'Cache-Control': 'public, max-age=1800, s-maxage=21600, stale-while-revalidate=86400',
+};
 
 interface DividendRecord {
   symbol: string;
@@ -25,11 +30,33 @@ const SYMBOL_ALIASES: Record<string, string> = {
 };
 
 function getSymbolCandidates(symbol: string) {
-  const normalized = symbol.trim().toUpperCase();
+  const raw = symbol.trim().toUpperCase();
+  const normalized = raw.replace(/[\s.,]+$/, "");
   const alias = SYMBOL_ALIASES[normalized] ?? normalized;
-  if (alias.includes(".")) return [alias];
-  if (/^\d{4,6}$/.test(alias)) return [`${alias}.TW`, `${alias}.TWO`, alias];
-  return [alias, `${alias}.VN`];
+  const candidates: string[] = [];
+
+  const addCandidate = (cand?: string | null) => {
+    if (!cand) return;
+    const clean = cand.trim().toUpperCase();
+    if (clean && !candidates.includes(clean)) candidates.push(clean);
+  };
+
+  if (raw !== normalized) addCandidate(normalized);
+  addCandidate(alias);
+  if (alias.includes(".")) {
+    addCandidate(alias.replace(/\./g, "-"));
+    addCandidate(alias.replace(/\./g, ""));
+    return candidates;
+  }
+  if (/^\d{4,6}$/.test(alias)) {
+    addCandidate(`${alias}.TW`);
+    addCandidate(`${alias}.TWO`);
+    addCandidate(alias);
+    return candidates;
+  }
+  addCandidate(alias);
+  addCandidate(`${alias}.VN`);
+  return candidates;
 }
 
 export async function GET(req: NextRequest) {
@@ -58,16 +85,20 @@ export async function GET(req: NextRequest) {
     let lastError: unknown = null;
     for (const candidate of getSymbolCandidates(symbol)) {
       try {
-        const result = await yahooFinance.chart(candidate, {
-          period1,
-          period2,
-          interval: '1mo',
-        });
+        const result = await marketRequestCache.getOrCreate(
+          `dividends:${candidate}:${startDate}`,
+          DIVIDEND_TTL_MS,
+          () => yahooFinance.chart(candidate, {
+            period1,
+            period2,
+            interval: '1mo',
+          }),
+        );
 
         const dividendEvents = result?.events?.dividends;
 
         if (!dividendEvents || dividendEvents.length === 0) {
-          return NextResponse.json([]);
+          return NextResponse.json([], { headers: DIVIDEND_RESPONSE_HEADERS });
         }
 
         const dividends: DividendRecord[] = dividendEvents.map(
@@ -84,16 +115,16 @@ export async function GET(req: NextRequest) {
           }
         );
 
-        return NextResponse.json(dividends);
+        return NextResponse.json(dividends, { headers: DIVIDEND_RESPONSE_HEADERS });
       } catch (error) {
         lastError = error;
       }
     }
 
     console.error(`[stock-dividends] Failed to fetch dividends for ${symbol}:`, lastError);
-    return NextResponse.json([]);
+    return NextResponse.json([], { headers: DIVIDEND_RESPONSE_HEADERS });
   } catch (error) {
     console.error(`[stock-dividends] Outer failure for ${symbol}:`, error);
-    return NextResponse.json([]);
+    return NextResponse.json([], { headers: DIVIDEND_RESPONSE_HEADERS });
   }
 }

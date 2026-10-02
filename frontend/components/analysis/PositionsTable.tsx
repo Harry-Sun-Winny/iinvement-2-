@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import type { AnalysisDerived, PositionSummary, SortDir, SortKey, StockData } from "@/types/analysis";
 import { formatNumber, formatPercent, isFiniteNumber } from "@/utils/risk";
@@ -32,6 +32,29 @@ function SortIcon({ active, direction }: { active: boolean; direction: SortDir }
 }
 
 function PositionsTable(props: Props) {
+  const symbolsKey = useMemo(() => props.positions.map((position) => position.symbol).join("|"), [props.positions]);
+  const [logos, setLogos] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const symbols = symbolsKey ? symbolsKey.split("|") : [];
+    if (!symbols.length) return;
+
+    Promise.all(symbols.map(async (symbol) => {
+      try {
+        const response = await fetch(`/api/stock-news?symbol=${encodeURIComponent(symbol)}&crawl=1`);
+        const profile = response.ok ? await response.json() : null;
+        return [symbol, typeof profile?.logo === "string" ? profile.logo : ""] as const;
+      } catch {
+        return [symbol, ""] as const;
+      }
+    })).then((entries) => {
+      if (!cancelled) setLogos(Object.fromEntries(entries));
+    });
+
+    return () => { cancelled = true; };
+  }, [symbolsKey]);
+
   if (!props.positions.length) {
     return (
       <div className="app-panel relative overflow-hidden rounded-[24px] p-12 text-center text-slate-400 shadow-[0_24px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl">
@@ -119,8 +142,9 @@ function PositionsTable(props: Props) {
                   {/* Symbol details */}
                   <td className="px-4 py-4 text-left">
                     <div className="flex items-center gap-3">
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-950/60 border border-white/5 text-xs font-black text-cyan-400 shadow-inner group-hover:border-cyan-500/20 group-hover:text-cyan-300 transition-all duration-300">
-                        {position.symbol.slice(0, 2)}
+                      <div className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-slate-950/60 border border-white/5 text-xs font-black text-cyan-400 shadow-inner group-hover:border-cyan-500/20 group-hover:text-cyan-300 transition-all duration-300">
+                        <span>{position.symbol.slice(0, 2)}</span>
+                        {logos[position.symbol] && <img src={logos[position.symbol]} alt={`${position.symbol} logo`} className="absolute inset-0 h-full w-full object-contain bg-slate-950 p-1.5" loading="lazy" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
                       </div>
                       <div className="min-w-0">
                         <p className="font-extrabold text-slate-100 group-hover:text-cyan-300 transition-colors">{position.symbol}</p>

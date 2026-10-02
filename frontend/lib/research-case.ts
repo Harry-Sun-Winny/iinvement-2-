@@ -1,0 +1,30 @@
+export type ResearchStatus = "draft" | "collecting-evidence" | "under-analysis" | "challenged" | "policy-review" | "approved" | "rejected" | "monitoring" | "closed";
+export type ResearchEvent = { type: "ADD_EVIDENCE" } | { type: "SUBMIT_FOR_ANALYSIS" } | { type: "ANALYSIS_COMPLETED" } | { type: "REQUEST_CHALLENGE" } | { type: "CHALLENGE_COMPLETED" } | { type: "RUN_SCORING" } | { type: "SEND_TO_POLICY" } | { type: "APPROVE" } | { type: "REJECT"; reason: string } | { type: "REOPEN" };
+export type ResearchCase = { id: string; assetId: string; portfolioId?: string; status: ResearchStatus; currentRevision: number; ownerId: string; updatedAt: string; evidenceSnapshotId?: string; analysisRunId?: string; scoreRunId?: string; policyRunId?: string };
+export type AnalysisDependency = { evidenceSnapshotHash: string; thesisRevisionHash: string; marketDataSnapshotHash: string; parameterSetHash: string };
+export type DataQualityDimension = { completeness: number; freshness: number; sourceReliability: number; directness: number; consistency: number; temporalIntegrity: number };
+export type DataQualityFinding = { code: "STALE_SOURCE" | "MISSING_LOCATOR" | "SECONDARY_ONLY" | "CONFLICTING_VALUES" | "FUTURE_KNOWLEDGE" | "CURRENCY_UNKNOWN" | "DATE_MISMATCH"; severity: "info" | "warning" | "blocking"; field: string; message: string };
+const transitions: Record<string, Partial<Record<ResearchEvent["type"], ResearchStatus>>> = {
+  draft: { ADD_EVIDENCE: "collecting-evidence" }, "collecting-evidence": { SUBMIT_FOR_ANALYSIS: "under-analysis" }, "under-analysis": { ANALYSIS_COMPLETED: "challenged" }, challenged: { CHALLENGE_COMPLETED: "policy-review" }, "policy-review": { APPROVE: "approved", REJECT: "rejected" }, rejected: { REOPEN: "collecting-evidence" }, approved: { REOPEN: "collecting-evidence" }, monitoring: { REOPEN: "collecting-evidence" },
+};
+export function transitionResearchCase(status: ResearchStatus, event: ResearchEvent, context?: { hasEvidence?: boolean; hasPolicy?: boolean; hasChallenge?: boolean; hardStops?: number; engineMatches?: boolean }): ResearchStatus {
+  if (event.type === "APPROVE" && (!context?.hasEvidence || !context.hasPolicy || !context.hasChallenge || (context.hardStops ?? 0) > 0 || context.engineMatches === false)) throw new Error("Approval blocked by workflow prerequisites");
+  const next = transitions[status]?.[event.type];
+  if (!next) throw new Error(`Event ${event.type} is not allowed from ${status}`);
+  return next;
+}
+export function getRunFreshness(current: AnalysisDependency, run: AnalysisDependency): "fresh" | "stale" { return JSON.stringify(current) === JSON.stringify(run) ? "fresh" : "stale"; }
+export function calculateDataQuality(d: DataQualityDimension): number { return Math.round(d.completeness * .2 + d.freshness * .15 + d.sourceReliability * .25 + d.directness * .15 + d.consistency * .15 + d.temporalIntegrity * .1); }
+export function findFutureKnowledge(knownAt: string, decisionAsOf: string): DataQualityFinding | null { return knownAt > decisionAsOf ? { code: "FUTURE_KNOWLEDGE", severity: "blocking", field: "knownAt", message: "Evidence was not publicly known at the decision timestamp." } : null; }
+
+export type ClaimKind = "fact" | "inference" | "assumption" | "forecast";
+export type ClaimNode = { id: string; text: string; kind: ClaimKind; status: "supported" | "challenged" | "contradicted" | "unverified"; evidenceIds: string[] };
+export type ClaimEdge = { fromId: string; toId: string; relation: "supports" | "contradicts" | "depends-on" | "causes" | "qualifies"; strength: number };
+export type Contradiction = { id: string; claimAId: string; claimBId: string; type: "numeric" | "temporal" | "causal" | "semantic" | "source-disagreement"; severity: number; resolutionStatus: "open" | "accepted-difference" | "resolved" | "invalid-source"; resolutionNote?: string };
+export type Provenance = { valueId: string; originalText: string; normalizedValue: number; unit: string; currency?: string; sourceDocumentId: string; page?: number; section?: string; extractionMethod: "manual" | "parser" | "ocr" | "ai-assisted"; extractedBy: string; verifiedBy?: string; verifiedAt?: string };
+export type ResearchRole = "viewer" | "analyst" | "reviewer" | "risk-officer" | "approver" | "admin";
+export type PolicyGate = { hasEvidenceSnapshot: boolean; hasChallenge: boolean; hasPolicyRun: boolean; hardStops: number; engineMatches: boolean; stale: boolean };
+export function canApprove(role: ResearchRole, gate: PolicyGate): boolean { return ["approver", "admin"].includes(role) && gate.hasEvidenceSnapshot && gate.hasChallenge && gate.hasPolicyRun && gate.hardStops === 0 && gate.engineMatches && !gate.stale; }
+export function validateClaimGraph(nodes: ClaimNode[], edges: ClaimEdge[]): string[] { const problems: string[] = []; for (const n of nodes) { if (n.kind !== "assumption" && n.evidenceIds.length === 0) problems.push(`CLAIM_WITHOUT_EVIDENCE:${n.id}`); if (n.status === "supported" && n.kind === "assumption") problems.push(`ASSUMPTION_AS_SUPPORTED:${n.id}`); } const visiting = new Set<string>(); const visited = new Set<string>(); const walk = (id: string): boolean => { if (visiting.has(id)) return true; if (visited.has(id)) return false; visiting.add(id); const cycle = edges.filter(e => e.fromId === id && ["depends-on", "causes"].includes(e.relation)).some(e => walk(e.toId)); visiting.delete(id); visited.add(id); return cycle; }; if (nodes.some(n => walk(n.id))) problems.push("CIRCULAR_REASONING"); return problems; }
+export function createPacketHash(input: Record<string, unknown>): string { const canonical = JSON.stringify(Object.keys(input).sort().reduce<Record<string, unknown>>((o,k) => { o[k] = input[k]; return o; }, {})); let hash = 2166136261; for (let i=0; i<canonical.length; i++) hash = Math.imul(hash ^ canonical.charCodeAt(i), 16777619); return (hash >>> 0).toString(16).padStart(8, "0"); }
+export function hasBlockingFindings(findings: DataQualityFinding[]): boolean { return findings.some(f => f.severity === "blocking"); }

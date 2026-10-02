@@ -66,7 +66,8 @@ public class PortfolioAnalyticsController {
                     ));
         }
 
-        backfillService.runIncrementalBackfillAsync(id);
+        // Explicit user refresh rebuilds the full history, unlike the daily job.
+        backfillService.runIncrementalBackfillAsync(id, java.time.LocalDate.of(1970, 1, 1));
 
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(Map.of(

@@ -3,6 +3,9 @@ package com.acme.investment.application.snapshot;
 import com.acme.investment.application.market.MarketDataService;
 import com.acme.investment.domain.market.HistoricalPrice;
 import com.acme.investment.infrastructure.persistence.portfolio.PortfolioJpaRepository;
+import com.acme.investment.infrastructure.persistence.portfolio.PortfolioEntity;
+import com.acme.investment.infrastructure.persistence.asset.AssetEntity;
+import com.acme.investment.infrastructure.persistence.asset.AssetJpaRepository;
 import com.acme.investment.infrastructure.persistence.snapshot.PortfolioSnapshotEntity;
 import com.acme.investment.infrastructure.persistence.snapshot.PortfolioSnapshotRepository;
 import com.acme.investment.infrastructure.persistence.transaction.TransactionEntity;
@@ -30,6 +33,7 @@ public class PortfolioSnapshotBackfillService {
     private final TransactionJpaRepository transactionRepo;
     private final PortfolioSnapshotRepository snapshotRepo;
     private final PortfolioJpaRepository portfolioRepo;
+    private final AssetJpaRepository assetRepo;
     private final MarketDataService marketDataService;
     private final TransactionTemplate transactionTemplate;
 
@@ -45,12 +49,14 @@ public class PortfolioSnapshotBackfillService {
     public PortfolioSnapshotBackfillService(TransactionJpaRepository transactionRepo,
                                             PortfolioSnapshotRepository snapshotRepo,
                                             PortfolioJpaRepository portfolioRepo,
+                                            AssetJpaRepository assetRepo,
                                             MarketDataService marketDataService,
                                             PlatformTransactionManager transactionManager,
                                             @Value("${app.backfill.scheduler.pool-size:2}") int poolSize) {
         this.transactionRepo = transactionRepo;
         this.snapshotRepo = snapshotRepo;
         this.portfolioRepo = portfolioRepo;
+        this.assetRepo = assetRepo;
         this.marketDataService = marketDataService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.scheduler = Executors.newScheduledThreadPool(poolSize);
@@ -191,6 +197,9 @@ public class PortfolioSnapshotBackfillService {
         try {
             if (!portfolioRepo.existsById(portfolioId)) return;
 
+            PortfolioEntity portfolio = portfolioRepo.findById(portfolioId).orElse(null);
+            String baseCurrency = (portfolio != null && portfolio.getBaseCurrency() != null) ? portfolio.getBaseCurrency().trim().toUpperCase() : "USD";
+
             List<TransactionEntity> chronologicalTxns = transactionRepo.findByPortfolioId(portfolioId);
             if (chronologicalTxns.isEmpty()) return;
             
@@ -224,11 +233,34 @@ public class PortfolioSnapshotBackfillService {
                 }
             }
 
+            // Map symbols to currencies
+            Map<String, String> symbolCurrencies = new HashMap<>();
+            for (String symbol : symbols) {
+                symbolCurrencies.put(symbol, resolveSymbolCurrency(symbol));
+            }
+
+            // Cache FX rates
+            Map<String, Map<LocalDate, BigDecimal>> fxHistoryCache = new HashMap<>();
+            for (String assetCurrency : new HashSet<>(symbolCurrencies.values())) {
+                if (!assetCurrency.equalsIgnoreCase(baseCurrency)) {
+                    try {
+                        List<HistoricalPrice> rateHistory = marketDataService.getHistoricalPrices(assetCurrency + baseCurrency + "=X");
+                        Map<LocalDate, BigDecimal> rateMap = new HashMap<>();
+                        for (HistoricalPrice hp : rateHistory) {
+                            rateMap.put(hp.getDate(), hp.getClose());
+                        }
+                        fxHistoryCache.put(assetCurrency, rateMap);
+                    } catch (Exception e) {
+                        log.warn("Failed to fetch FX rates for {}{}=X: {}", assetCurrency, baseCurrency, e.getMessage());
+                        fxHistoryCache.put(assetCurrency, Collections.emptyMap());
+                    }
+                }
+            }
+
             // Loop day-by-day starting from startDate
             LocalDate current = startDate;
             while (!current.isAfter(endDate)) {
                 // Recompute holdings up to current day
-                BigDecimal cash = BigDecimal.ZERO;
                 Map<String, BigDecimal> holdingsQty = new HashMap<>();
                 Map<String, BigDecimal> holdingsCost = new HashMap<>();
                 BigDecimal totalRealizedPnl = BigDecimal.ZERO;
@@ -243,11 +275,9 @@ public class PortfolioSnapshotBackfillService {
                     String sym = t.getAssetSymbol().toUpperCase();
 
                     if ("BUY".equalsIgnoreCase(t.getType())) {
-                        cash = cash.subtract(qty.multiply(price).add(fee));
                         holdingsQty.put(sym, holdingsQty.getOrDefault(sym, BigDecimal.ZERO).add(qty));
                         holdingsCost.put(sym, holdingsCost.getOrDefault(sym, BigDecimal.ZERO).add(qty.multiply(price).add(fee)));
                     } else if ("SELL".equalsIgnoreCase(t.getType())) {
-                        cash = cash.add(qty.multiply(price).subtract(fee));
                         BigDecimal currentQty = holdingsQty.getOrDefault(sym, BigDecimal.ZERO);
                         if (currentQty.compareTo(BigDecimal.ZERO) > 0) {
                             BigDecimal avgCostPerShare = holdingsCost.getOrDefault(sym, BigDecimal.ZERO).divide(currentQty, 8, java.math.RoundingMode.HALF_UP);
@@ -258,10 +288,10 @@ public class PortfolioSnapshotBackfillService {
                     }
                 }
 
-                // Calculate values using daily price
-                BigDecimal cashPositive = cash.compareTo(BigDecimal.ZERO) > 0 ? cash : BigDecimal.ZERO;
-                BigDecimal totalValue = cashPositive;
-                BigDecimal totalCost = cashPositive;
+                // Holdings-only: purchases are externally funded and sale
+                // proceeds leave the positions. No cash account is tracked.
+                BigDecimal totalValue = BigDecimal.ZERO;
+                BigDecimal totalCost = BigDecimal.ZERO;
 
                 for (Map.Entry<String, BigDecimal> entry : holdingsQty.entrySet()) {
                     String sym = entry.getKey();
@@ -287,6 +317,30 @@ public class PortfolioSnapshotBackfillService {
                     if (priceOnDate == null) {
                         BigDecimal cost = holdingsCost.getOrDefault(sym, BigDecimal.ZERO);
                         priceOnDate = cost.divide(qty, 8, java.math.RoundingMode.HALF_UP);
+                    } else {
+                        // Apply currency conversion
+                        String assetCurrency = symbolCurrencies.getOrDefault(sym, "USD");
+                        if (!assetCurrency.equalsIgnoreCase(baseCurrency)) {
+                            Map<LocalDate, BigDecimal> rateHistory = fxHistoryCache.get(assetCurrency);
+                            BigDecimal rateOnDate = null;
+                            if (rateHistory != null) {
+                                rateOnDate = rateHistory.get(current);
+                                if (rateOnDate == null) {
+                                    LocalDate lookback = current;
+                                    for (int i = 0; i < 7; i++) {
+                                        lookback = lookback.minusDays(1);
+                                        if (rateHistory.containsKey(lookback)) {
+                                            rateOnDate = rateHistory.get(lookback);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (rateOnDate == null) {
+                                rateOnDate = BigDecimal.ONE;
+                            }
+                            priceOnDate = priceOnDate.multiply(rateOnDate);
+                        }
                     }
 
                     totalValue = totalValue.add(qty.multiply(priceOnDate));
@@ -305,7 +359,7 @@ public class PortfolioSnapshotBackfillService {
 
                 snapshot.setTotalValue(totalValue);
                 snapshot.setTotalCost(totalCost);
-                snapshot.setCashBalance(cash);
+                snapshot.setCashBalance(BigDecimal.ZERO);
                 snapshot.setRealizedPnl(totalRealizedPnl);
                 snapshot.setUnrealizedPnl(totalValue.subtract(totalCost));
                 snapshotRepo.save(snapshot);
@@ -315,5 +369,25 @@ public class PortfolioSnapshotBackfillService {
         } finally {
             activeBackfills.remove(portfolioId);
         }
+    }
+
+    private String resolveSymbolCurrency(String symbol) {
+        if (symbol == null) return "USD";
+        symbol = symbol.toUpperCase().trim();
+        if (symbol.contains(".")) {
+            if (symbol.endsWith(".KS")) return "KRW";
+            if (symbol.endsWith(".HK")) return "HKD";
+            if (symbol.endsWith(".TW") || symbol.endsWith(".TWO")) return "TWD";
+            if (symbol.endsWith(".AS")) return "EUR";
+            if (symbol.endsWith(".DE")) return "EUR";
+            if (symbol.endsWith(".VN")) return "VND";
+            if (symbol.endsWith(".T")) return "JPY";
+            if (symbol.endsWith(".SS")) return "CNY";
+        }
+        return assetRepo.findBySymbolIgnoreCase(symbol)
+                .map(AssetEntity::getCurrency)
+                .map(String::trim)
+                .map(String::toUpperCase)
+                .orElse("USD");
     }
 }

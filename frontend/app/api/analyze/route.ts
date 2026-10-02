@@ -1,11 +1,18 @@
 import { NextRequest } from 'next/server'
+import { enforceRateLimit, readJsonBody, rejectCrossSiteRequest } from "../_lib/request-guard"
 import { fetchMarketData } from '@/lib/ai/fetchMarketData'
 import { buildPrompt } from '@/lib/ai/buildPrompt'
 
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
-  const { positions, prices, mode, symbol, question } = await req.json()
+  const crossSite = rejectCrossSiteRequest(req)
+  if (crossSite) return crossSite
+  const rateLimited = enforceRateLimit(req, { key: "analyze", limit: 8, windowMs: 10 * 60_000 })
+  if (rateLimited) return rateLimited
+  const parsedBody = await readJsonBody<Record<string, unknown>>(req, 120_000)
+  if ("response" in parsedBody) return parsedBody.response
+  const { positions, prices, mode, symbol, question } = parsedBody.body as any
 
   // 1. Fetch technical data thật từ Finnhub
   const marketData = await fetchMarketData({ mode, symbol, positions })

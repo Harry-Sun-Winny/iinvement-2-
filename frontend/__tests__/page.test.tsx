@@ -9,6 +9,40 @@ import * as api from "../app/lib/api";
 import AppSidebar from "../components/AppSidebar";
 import { ThemeProvider } from "../components/providers/ThemeProvider";
 
+vi.mock("../components/providers/I18nProvider", () => ({
+  useTranslation: () => ({
+    t: (key: string) => {
+      if (key === "sidebar.dashboard") return "Dashboard";
+      if (key === "sidebar.watchlist") return "Watchlist";
+      if (key === "sidebar.holdings") return "Holdings";
+      if (key === "sidebar.market") return "Market";
+      if (key === "sidebar.analysis") return "AI Analysis";
+      
+      if (key === "dashboard.goals") return "Goals";
+      if (key === "dashboard.news") return "News";
+      if (key === "dashboard.create") return "Create";
+      
+      if (key === "dashboard.addTransaction" || key === "portfolio.addTx") return "+ Thêm GD";
+      if (key === "common.add") return "Add";
+      if (key === "portfolio.create") return "Create";
+      if (key === "common.create") return "Create";
+      
+      if (key === "dashboard.portfolioName") return "Portfolio name";
+      if (key === "dashboard.watchlistName") return "Watchlist name";
+      if (key === "dashboard.goalName") return "Goal name";
+      return key;
+    },
+    language: "vi",
+  }),
+}));
+
+global.ResizeObserver = class ResizeObserverMock {
+  constructor(public callback: any) {}
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as any;
+
 vi.mock("../app/portfolio/[id]/chart", () => ({
   default: () => <div data-testid="portfolio-chart" />,
 }));
@@ -18,6 +52,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/",
   useRouter: () => ({
     push: vi.fn(),
+    replace: vi.fn(),
   }),
 }));
 
@@ -82,12 +117,18 @@ vi.mock("../hooks/usePortfolioAnalysis", () => ({
 
 vi.mock("../hooks/useJournal", () => ({
   useJournal: () => ({
+    entries: [],
     symbolCounts: { AAPL: 1 },
     saveAIAnalysis: vi.fn(),
   }),
 }));
 
 vi.mock("../app/lib/api", () => ({
+  ApiError: class ApiError extends Error {
+    constructor(public status: number, message: string) {
+      super(message);
+    }
+  },
   getPortfolios: vi.fn(),
   getWatchlists: vi.fn(),
   getGoals: vi.fn(),
@@ -103,8 +144,14 @@ vi.mock("../app/lib/api", () => ({
   deleteTransaction: vi.fn(),
   getWatchlistItems: vi.fn(),
   getStockPrice: vi.fn(),
+  getStockPrices: vi.fn(),
+  getFxRate: vi.fn(),
   login: vi.fn(),
   register: vi.fn(),
+  storeAuthSession: vi.fn((session: { token: string }) => {
+    localStorage.setItem("token", session.token);
+    localStorage.removeItem("refreshToken");
+  }),
 }));
 
 const portfolio = {
@@ -178,6 +225,25 @@ beforeEach(() => {
     price: 120,
     change: 2,
     changePercent: 1.7,
+    currency: "USD",
+  });
+  vi.mocked(api.getStockPrices).mockResolvedValue({
+    AAPL: {
+      symbol: "AAPL",
+      requestedSymbol: "AAPL",
+      price: 120,
+      change: 2,
+      changePercent: 1.7,
+      dayHigh: 122,
+      dayLow: 117,
+      currency: "USD",
+    },
+  });
+  vi.mocked(api.getFxRate).mockResolvedValue({
+    base: "USD",
+    rates: { USD: 1, VND: 25_400 },
+    updatedAt: "2026-07-29T00:00:00Z",
+    source: "Test",
   });
 
   mockFetch((input) => {
@@ -187,6 +253,18 @@ beforeEach(() => {
     if (input.includes("/api/stock-search")) {
       return [{ symbol: "AAPL", name: "Apple Inc", type: "Equity" }];
     }
+    if (input.includes("/api/stock-history")) {
+      return {
+        points: [
+          { date: "2026-06-08", close: 118 },
+          { date: "2026-06-09", close: 119 },
+          { date: "2026-06-10", close: 117 },
+          { date: "2026-06-11", close: 121 },
+          { date: "2026-06-12", close: 124 },
+          { date: "2026-06-15", close: 125 },
+        ],
+      };
+    }
     if (input.includes("/api/stock-price")) {
       return {
         price: 123.45,
@@ -194,6 +272,11 @@ beforeEach(() => {
         changePercent: 0.99,
         changeRange: 4.56,
         changePctRange: 3.21,
+        volume: 180,
+        averageVolume: 100,
+        fiftyTwoWeekHigh: 125,
+        fiftyTwoWeekLow: 80,
+        trailingPE: 16,
         dataQuality: {
           status: "OK",
           checks: [],
@@ -221,6 +304,43 @@ afterEach(() => {
 });
 
 describe("dashboard", () => {
+  it("keeps currency and detail controls working in the new layout", async () => {
+    render(<Page />);
+    await screen.findByText("Growth Portfolio");
+    expect(screen.getByRole("img", { name: "Apple logo" })).toBeTruthy();
+    const priceChart = await screen.findByRole("img", { name: /Biểu đồ giá AAPL, 5 phiên gần nhất/ });
+    expect(priceChart.getAttribute("data-session-count")).toBe("5");
+    expect(screen.getByText("1 tháng")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Tổng quan tài sản" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Lịch giao dịch" }));
+    const transactionHeading = screen.getByRole("heading", { level: 2, name: "Lịch giao dịch" });
+    expect(screen.getByRole("region", { name: "Quản lý danh mục" }).contains(transactionHeading)).toBe(true);
+    expect(screen.getByRole("region", { name: "Phân tích và hoạt động" }).contains(transactionHeading)).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Holdings" }));
+    fireEvent.click(screen.getByRole("button", { name: "VND" }));
+    expect(screen.getByRole("button", { name: "VND" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "USD" }).getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Chi tiết" }));
+    expect(screen.getByRole("button", { name: "Thu gọn" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("region", { name: "Chi tiết thu nhập" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Xem mã" }));
+    expect(screen.getByRole("button", { name: "Thu gọn" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByRole("region", { name: "Chi tiết thu nhập" })).toBeNull();
+    expect(document.getElementById("dashboard-today-movers")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Thu gọn" }));
+    expect(document.getElementById("dashboard-today-movers")).toBeNull();
+  });
+
+  it("offers portfolio creation directly from the empty workspace", async () => {
+    vi.mocked(api.getPortfolios).mockResolvedValue([]);
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "dashboard.createPortfolio" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Portfolio name")).toBeTruthy();
+  });
+
   it("loads portfolio workspace data and shows navigation", async () => {
     render(
       <ThemeProvider>
@@ -263,20 +383,27 @@ describe("market", () => {
   it("loads index prices, switches category, and selects a search suggestion", async () => {
     render(<MarketPage />);
 
-    expect(await screen.findByText("S&P 500")).toBeTruthy();
+    expect((await screen.findAllByText(/Trending stocks|Cổ phiếu theo xu hướng/)).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /52-week highs|Mức đỉnh trong 52 tuần/ }));
+    expect((await screen.findAllByText(/4 results|4 kết quả/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/below 52-week high|Cách đỉnh 52 tuần/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /Indices|Chỉ số/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Main indices|Chỉ số chính/ }));
+    expect((await screen.findAllByText("S&P 500")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("123.45").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /Stocks/ }));
-    expect(await screen.findByText("Apple")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Stock discovery|Khám phá cổ phiếu/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Stock screener|Sàng lọc cổ phiếu/ }));
+    expect((await screen.findAllByText("Apple")).length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "apple" } });
 
     const suggestion = await screen.findByText(/Apple Inc/);
     fireEvent.click(suggestion);
 
-    expect(await screen.findByText("Apple Inc")).toBeTruthy();
+    expect((await screen.findAllByText("Apple Inc")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
-  });
+  }, 10_000);
 });
 
 describe("ai analysis", () => {
@@ -331,7 +458,7 @@ describe("portfolio transactions", () => {
 
     const { container } = render(<PortfolioPage />);
 
-    expect(await screen.findByText("INTEL")).toBeTruthy();
+    expect((await screen.findAllByText("INTEL")).length).toBeGreaterThan(0);
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/stock-price?symbol=INTC", expect.any(Object)));
     fireEvent.click(screen.getByRole("button", { name: "+ Thêm GD" }));
 
@@ -343,7 +470,7 @@ describe("portfolio transactions", () => {
     fireEvent.click(screen.getByRole("button", { name: /Xác nhận giao dịch/ }));
 
     await waitFor(() => expect(api.createTransaction).toHaveBeenCalled());
-    expect(await screen.findByText("JPM")).toBeTruthy();
+    expect((await screen.findAllByText("JPM")).length).toBeGreaterThan(0);
     expect(screen.getByText("JPMorgan Chase & Co.")).toBeTruthy();
   });
 });
@@ -353,8 +480,8 @@ describe("login", () => {
     vi.mocked(api.login).mockResolvedValue({ token: "new-token", tokenType: "Bearer" });
     const { container } = render(<LoginPage />);
 
-    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "user@example.com" } });
-    fireEvent.change(container.querySelector("input[type='password']")!, { target: { value: "very-secure-password" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "user@example.com" } });
+    fireEvent.change(screen.getByLabelText("Mật khẩu"), { target: { value: "very-secure-password" } });
     fireEvent.click(container.querySelector("button[type='submit']")!);
 
     await waitFor(() => expect(api.login).toHaveBeenCalledWith("user@example.com", "very-secure-password", expect.any(AbortSignal)));

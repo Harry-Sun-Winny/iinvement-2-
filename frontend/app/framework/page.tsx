@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { useTranslation } from "@/components/providers/I18nProvider";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import ChartTooltip from "@/components/charts/ChartTooltip";
@@ -270,6 +271,8 @@ const PSYCHOLOGY_STAGES: CycleStage[] = [
 ];
 
 export default function FrameworkPage() {
+  const { language } = useTranslation();
+  const isVi = language === "vi";
   const { theme, setTheme, themes, textClass } = useTableTheme();
   const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
   const [selectedIndustry, setSelectedIndustry] = useState<string>("BANKING");
@@ -309,11 +312,11 @@ export default function FrameworkPage() {
 
   return (
     <div className="flex flex-1 h-full overflow-hidden">
-      <main className="w-[800px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
+      <main className="w-[820px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
       <header className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
               <p className="text-sm font-semibold text-[#54a0ff] uppercase tracking-wider flex items-center gap-1.5">
-                <BookOpen size={16} /> Khung phương pháp luận đầu tư
+                <BookOpen size={16} /> {isVi ? "Khung phương pháp luận đầu tư" : "Investment Methodology Framework"}
               </p>
               <h2 className="mt-2 text-3xl font-black rainbow-text">Investment Analysis Framework</h2>
             </div>
@@ -321,10 +324,10 @@ export default function FrameworkPage() {
             {/* Navigation Tabs */}
             <div className="flex bg-slate-900/60 p-1 rounded-xl border border-white/5 gap-1 shadow-inner shadow-black">
               {[
-                { id: "overview", label: "Tổng quan vĩ mô" },
-                { id: "details", label: "Chi tiết 7 Ngành" },
-                { id: "psychology", label: "Chu kỳ tâm lý" },
-                { id: "stepper", label: "Quy trình 5 Bước" }
+                { id: "overview", label: isVi ? "Tổng quan vĩ mô" : "Macro Overview" },
+                { id: "details", label: isVi ? "Chi tiết 7 Ngành" : "7 Industry Details" },
+                { id: "psychology", label: isVi ? "Chu kỳ tâm lý" : "Psychology Cycle" },
+                { id: "stepper", label: isVi ? "Quy trình 5 Bước" : "5-Step Process" }
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -348,9 +351,9 @@ export default function FrameworkPage() {
                 <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
                   <CardHeader>
                     <CardTitle className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                      <Layers size={16} className="text-blue-400" /> Phân phối trọng số các ngành
+                      <Layers size={16} className="text-blue-400" /> {isVi ? "Phân phối trọng số các ngành" : "Industry Weight Distribution"}
                     </CardTitle>
-                    <CardDescription>Biểu đồ so sánh cơ cấu trọng số 4 trụ cột phân tích trên 7 ngành kinh tế chính.</CardDescription>
+                    <CardDescription>{isVi ? "Biểu đồ so sánh cơ cấu trọng số 4 trụ cột phân tích trên 7 ngành kinh tế chính." : "Comparison chart of 4-pillar weight structure across 7 major economic sectors."}  </CardDescription>
                   </CardHeader>
                   <CardContent className="h-[300px] pt-4">
                     {mounted && (
@@ -376,7 +379,7 @@ export default function FrameworkPage() {
                     <CardTitle className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
                       <Info size={16} className="text-emerald-400" /> Framework 4 Trụ Cột (4 Pillars)
                     </CardTitle>
-                    <CardDescription>Lăng kính đa chiều phân tích chất lượng một cổ phiếu trước khi đầu tư.</CardDescription>
+                    <CardDescription>{isVi ? "Lăng kính đa chiều phân tích chất lượng một cổ phiếu trước khi đầu tư." : "A multi-dimensional lens for analyzing stock quality before investing."}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3.5 text-xs text-slate-300">
                     <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10">
@@ -413,7 +416,7 @@ export default function FrameworkPage() {
 
               {/* Table Accent Color Picker */}
               <div className="flex flex-col md:flex-row md:items-center justify-between bg-slate-900/40 px-4 py-3 rounded-xl border border-white/5 gap-3">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-normal min-w-[120px] break-words">Màu chủ đạo của bảng:</span>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-normal min-w-[120px] break-words">{isVi ? "Màu chủ đạo của bảng:" : "Table accent color:"}</span>
                 <div className="flex flex-wrap items-center gap-1.5 justify-end">
                   {themes.map((t) => (
                     <button
@@ -432,18 +435,18 @@ export default function FrameworkPage() {
               {/* Heatmap table weights */}
               <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all overflow-hidden">
                 <CardHeader>
-                  <CardTitle className="text-sm font-bold text-white">Bảng phân bổ trọng số chi tiết (Heatmap)</CardTitle>
-                  <CardDescription>Nhấn vào dòng bất kỳ để xem chi tiết các chỉ số cụ thể của ngành đó.</CardDescription>
+                  <CardTitle className="text-sm font-bold text-white">{isVi ? "Bảng phân bổ trọng số chi tiết (Heatmap)" : "Detailed Weight Allocation Table (Heatmap)"}</CardTitle>
+                  <CardDescription>{isVi ? "Nhấn vào dòng bất kỳ để xem chi tiết các chỉ số cụ thể của ngành đó." : "Click any row to view specific metrics for that industry."}</CardDescription>
                 </CardHeader>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead>
                       <tr className="border-b border-white/10 bg-[var(--table)]/50">
-                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider`}>Ngành</th>
-                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider text-center`}>Cơ bản</th>
-                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider text-center`}>Kỹ thuật</th>
-                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider text-center`}>Định lượng</th>
-                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider text-center`}>Tâm lý</th>
+                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider`}>{isVi ? "Ngành" : "Industry"}</th>
+                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider text-center`}>{isVi ? "Cơ bản" : "Fundamental"}</th>
+                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider text-center`}>{isVi ? "Kỹ thuật" : "Technical"}</th>
+                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider text-center`}>{isVi ? "Định lượng" : "Quantitative"}</th>
+                        <th className={`py-4 px-6 ${textClass} font-bold text-xs uppercase tracking-wider text-center`}>{isVi ? "Tâm lý" : "Sentiment"}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -787,7 +790,139 @@ export default function FrameworkPage() {
             </div>
           )}
       </main>
-      <div className="flex-1 h-full overflow-y-auto p-6 bg-transparent" />
+      
+      {/* Right Analytics Workspace */}
+      <div className="flex-1 h-full overflow-y-auto p-6 space-y-6 z-10">
+        {activeTab === "overview" && (
+          <div className="antigravity-panel p-5 space-y-4 bg-transparent">
+            <div className="border-b border-white/5 pb-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Chỉ báo Vĩ mô Tham chiếu</h3>
+            </div>
+            <div className="space-y-4 text-xs">
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3">
+                <p className="font-bold text-white mb-1">Chỉ số Lạm phát (CPI)</p>
+                <p className="text-slate-400 leading-relaxed">Đo lường mức độ biến động giá tiêu dùng. Lạm phát dưới 4% tạo môi trường thuận lợi để hạ lãi suất.</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3">
+                <p className="font-bold text-white mb-1">Tăng trưởng GDP</p>
+                <p className="text-slate-400 leading-relaxed">Động lực tăng trưởng cốt lõi. Tốc độ trên 6% báo hiệu chu kỳ kinh doanh mở rộng mạnh mẽ.</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3">
+                <p className="font-bold text-white mb-1">Lại suất Điều hành</p>
+                <p className="text-slate-400 leading-relaxed">Công cụ định hướng dòng tiền vĩ mô. Chu kỳ hạ lãi suất là chất xúc tác cực mạnh cho cổ phiếu.</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3">
+                <p className="font-bold text-white mb-1">Chỉ số Sản xuất (PMI)</p>
+                <p className="text-slate-400 leading-relaxed">Sức khỏe ngành sản xuất. PMI &gt; 50 thể hiện sự mở rộng sản xuất thực tế của nền kinh tế.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "details" && (
+          <div className="antigravity-panel p-5 space-y-4 bg-transparent">
+            <div className="border-b border-white/5 pb-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Trọng số Đánh giá Ngành</h3>
+              <p className="text-[10px] text-slate-500 mt-1 uppercase font-bold tracking-wider">{activeInd.name}</p>
+            </div>
+            
+            <div className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <div className="flex justify-between font-bold text-white">
+                  <span>Cơ bản (Fundamentals):</span>
+                  <span>{activeInd.fundamental}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${activeInd.fundamental}%` }} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between font-bold text-white">
+                  <span>Kỹ thuật (Technicals):</span>
+                  <span>{activeInd.technical}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <div className="h-full bg-purple-500 rounded-full" style={{ width: `${activeInd.technical}%` }} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between font-bold text-white">
+                  <span>Định lượng (Quantitative):</span>
+                  <span>{activeInd.quantitative}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <div className="h-full bg-amber-500 rounded-full" style={{ width: `${activeInd.quantitative}%` }} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between font-bold text-white">
+                  <span>Tâm lý (Sentiment):</span>
+                  <span>{activeInd.sentiment}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                  <div className="h-full bg-red-400 rounded-full" style={{ width: `${activeInd.sentiment}%` }} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3.5 mt-2 space-y-2">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tiêu chí trọng tâm</p>
+                <ul className="space-y-1 text-slate-400 leading-relaxed list-disc pl-4">
+                  {activeInd.priorityMetrics.map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "psychology" && (
+          <div className="antigravity-panel p-5 space-y-4 bg-transparent">
+            <div className="border-b border-white/5 pb-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Thông điệp giai đoạn</h3>
+            </div>
+            
+            <div className="space-y-4 text-xs">
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-bold text-white">{PSYCHOLOGY_STAGES[selectedStage].name}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border ${
+                    PSYCHOLOGY_STAGES[selectedStage].zone === "green" 
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                      : "bg-red-500/10 text-red-400 border-red-500/20"
+                  }`}>
+                    {PSYCHOLOGY_STAGES[selectedStage].zone === "green" ? "BUY ZONE" : "SELL ZONE"}
+                  </span>
+                </div>
+                <p className="text-slate-450 leading-relaxed">{PSYCHOLOGY_STAGES[selectedStage].description}</p>
+              </div>
+
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-4">
+                <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Hành động của Quỹ</h4>
+                <p className="font-semibold text-slate-200 leading-relaxed">{PSYCHOLOGY_STAGES[selectedStage].action}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "stepper" && (
+          <div className="antigravity-panel p-5 space-y-4 bg-transparent">
+            <div className="border-b border-white/5 pb-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Tóm lược 5 Bước Giao dịch</h3>
+            </div>
+            <div className="space-y-3 text-xs text-slate-400 leading-relaxed">
+              <p><span className="font-bold text-white">Bước 1:</span> Sàng lọc vĩ mô toàn cảnh thị trường.</p>
+              <p><span className="font-bold text-white">Bước 2:</span> Chọn lọc và áp trọng số ngành phù hợp.</p>
+              <p><span className="font-bold text-white">Bước 3:</span> Chấm điểm chi tiết cổ phiếu theo 4 trụ cột.</p>
+              <p><span className="font-bold text-white">Bước 4:</span> Kiểm tra quy mô vị thế & quản trị rủi ro.</p>
+              <p><span className="font-bold text-white">Bước 5:</span> Lưu nhật ký để AI giám sát tối ưu.</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

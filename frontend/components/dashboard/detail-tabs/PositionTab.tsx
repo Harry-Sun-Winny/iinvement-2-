@@ -1,12 +1,24 @@
-import { HoldingExt } from "@/app/holdings/page";
-import { LineChart, Line, YAxis } from "recharts";
+import { fmtMoney, fmtSignedMoney } from "../../../app/lib/finance/currency";
 import AutoSizedChart from "@/components/charts/AutoSizedChart";
+import ChartTooltip from "@/components/charts/ChartTooltip";
+import { CartesianGrid, LineChart, Line, Tooltip, XAxis, YAxis } from "recharts";
 
-export function PositionTab({ holding, transactions, marketData }: { holding: HoldingExt, transactions: any[], marketData?: any }) {
+export function PositionTab({ 
+  holding, 
+  transactions, 
+  marketData, 
+  currency = "USD" 
+}: { 
+  holding: any, 
+  transactions: any[], 
+  marketData?: any, 
+  currency?: string 
+}) {
   const formatNum = (num: number | undefined, prefix = "", suffix = "") => 
     num != null ? `${prefix}${num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${suffix}` : "--";
 
-  const costBasis = holding.avgCost * holding.quantity;
+  const isVnd = currency === "VND";
+  const costBasis = (holding.marketValueDisplay ?? holding.marketValue) - (holding.pnlDisplay ?? holding.pnl);
 
   // Calculate Realized P&L
   let realizedPnL = 0;
@@ -32,22 +44,24 @@ export function PositionTab({ holding, transactions, marketData }: { holding: Ho
     }
   });
 
+  const displayRealizedPnL = isVnd ? realizedPnL * 25400 : realizedPnL;
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <MetricCard label="Market Value" value={formatNum(holding.marketValue, "$")} />
-        <MetricCard label="Cost Basis" value={formatNum(costBasis, "$")} />
-        <MetricCard label="Average Cost" value={formatNum(holding.avgCost, "$")} />
+        <MetricCard label="Market Value" value={fmtMoney(holding.marketValueDisplay ?? holding.marketValue, currency)} />
+        <MetricCard label="Cost Basis" value={fmtMoney(holding.costBasisDisplay ?? costBasis, currency)} />
+        <MetricCard label="Average Cost" value={fmtMoney(holding.avgCostDisplay ?? holding.avgCost, currency)} />
         
         <MetricCard 
           label="Unrealized P&L" 
-          value={formatNum(Math.abs(holding.pnl), holding.pnl >= 0 ? "+$" : "-$")} 
-          trend={holding.pnl >= 0 ? "up" : "down"}
+          value={fmtSignedMoney(holding.pnlDisplay ?? holding.pnl, currency)} 
+          trend={(holding.pnlDisplay ?? holding.pnl) >= 0 ? "up" : "down"}
         />
         <MetricCard 
           label="Realized P&L" 
-          value={formatNum(Math.abs(realizedPnL), realizedPnL >= 0 ? "+$" : "-$")} 
-          trend={realizedPnL >= 0 ? "up" : "down"} 
+          value={fmtSignedMoney(displayRealizedPnL, currency)} 
+          trend={displayRealizedPnL >= 0 ? "up" : "down"} 
         />
         
         <div className="antigravity-panel p-4 border-white/5 bg-white/[0.01]">
@@ -62,13 +76,16 @@ export function PositionTab({ holding, transactions, marketData }: { holding: Ho
       </div>
 
       <div className="antigravity-panel p-4 border-white/5 bg-white/[0.01]">
-        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-4">6-Month Price Chart</p>
-        <div className="h-32 flex items-center justify-center border border-dashed border-white/5 rounded">
+        <div className="mb-3 flex items-center justify-between gap-3"><p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">6-Month Price Chart</p><span className="text-[10px] text-slate-500">Hover để xem giá và ngày</span></div>
+        <div className="h-44 flex items-center justify-center border border-dashed border-white/5 rounded px-2 py-2">
           {marketData?.historicalPrices && marketData.historicalPrices.length > 0 ? (
             <AutoSizedChart>
-              <LineChart data={marketData.historicalPrices.slice().reverse()}>
-                <YAxis domain={["auto", "auto"]} hide />
-                <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} />
+              <LineChart data={marketData.historicalPrices.slice().reverse()} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+                <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 9 }} tickLine={false} axisLine={{ stroke: "#334155" }} tickFormatter={(value) => String(value).slice(5)} minTickGap={28} />
+                <YAxis domain={["auto", "auto"]} tick={{ fill: "#94a3b8", fontSize: 9 }} tickLine={false} axisLine={false} width={48} tickFormatter={(value) => Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })} />
+                <Tooltip content={<ChartTooltip labelFormatter={(value) => `Ngày ${value}`} valueFormatter={(value) => formatNum(Number(value), currency === "VND" ? "₫" : "$" )} />} />
+                <Line name="Giá đóng cửa" type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0, fill: "#e0f2fe" }} />
               </LineChart>
             </AutoSizedChart>
           ) : (

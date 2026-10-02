@@ -1,3 +1,4 @@
+
 package com.acme.investment.application.transaction;
 
 import com.acme.investment.application.audit.AuditLogService;
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -83,10 +85,12 @@ class TransactionServiceTest {
                 BigDecimal.valueOf(100),
                 "USD",
                 LocalDate.of(2026, 7, 5),
-                "test"
+                "test",
+                BigDecimal.valueOf(2.5)
         );
 
         assertEquals(transactionId, transaction.id());
+        assertEquals(BigDecimal.valueOf(2.5), transaction.fee());
         verify(taxLotService).recomputeForSymbol(portfolioId, "AAPL");
         verify(holdingService).recalculate(portfolioId);
         verify(snapshotBackfillService).runIncrementalBackfillAsync(eq(portfolioId), eq(LocalDate.of(2026, 7, 5)));
@@ -166,7 +170,8 @@ class TransactionServiceTest {
                 BigDecimal.valueOf(200),
                 "USD",
                 LocalDate.of(2026, 7, 6),
-                "updated"
+                "updated",
+                BigDecimal.valueOf(1.25)
         );
 
         assertEquals("MSFT", transaction.assetSymbol());
@@ -175,6 +180,56 @@ class TransactionServiceTest {
         verify(holdingService).recalculate(portfolioId);
         verify(snapshotBackfillService).runIncrementalBackfillAsync(eq(portfolioId), eq(LocalDate.of(2026, 7, 1)));
         verify(auditLogService).log(eq(userId), eq("TRANSACTION"), eq(transactionId), eq("UPDATE"), anyMap(), anyMap());
+    }
+
+    @Test
+    void transferSymbolMovesHistoryAndRebuildsBothPortfolios() {
+        UUID userId = UUID.randomUUID();
+        UUID sourcePortfolioId = UUID.randomUUID();
+        UUID targetPortfolioId = UUID.randomUUID();
+        UUID transactionId = UUID.randomUUID();
+        TransactionJpaRepository transactionRepo = mock(TransactionJpaRepository.class);
+        PortfolioJpaRepository portfolioRepo = mock(PortfolioJpaRepository.class);
+        AssetJpaRepository assetRepo = mock(AssetJpaRepository.class);
+        AuditLogService auditLogService = mock(AuditLogService.class);
+        HoldingService holdingService = mock(HoldingService.class);
+        TaxLotService taxLotService = mock(TaxLotService.class);
+        PortfolioSnapshotBackfillService snapshotBackfillService = mock(PortfolioSnapshotBackfillService.class);
+
+        TransactionService service = new TransactionService(
+                transactionRepo,
+                portfolioRepo,
+                assetRepo,
+                auditLogService,
+                holdingService,
+                taxLotService,
+                snapshotBackfillService
+        );
+
+        PortfolioEntity source = portfolio(sourcePortfolioId, userId);
+        PortfolioEntity target = portfolio(targetPortfolioId, userId);
+        target.setName("Long term");
+        TransactionEntity existing = transactionEntity(transactionId, sourcePortfolioId, userId);
+        when(portfolioRepo.findById(sourcePortfolioId)).thenReturn(Optional.of(source));
+        when(portfolioRepo.findById(targetPortfolioId)).thenReturn(Optional.of(target));
+        when(transactionRepo.findByPortfolioIdAndAssetSymbolOrderByTransactionDateAscCreatedAtAsc(sourcePortfolioId, "AAPL"))
+                .thenReturn(List.of(existing));
+
+        TransactionService.TransferResult result = service.transferSymbol(
+                sourcePortfolioId, targetPortfolioId, userId, "aapl"
+        );
+
+        assertEquals("AAPL", result.symbol());
+        assertEquals(1, result.transactionCount());
+        assertEquals(targetPortfolioId, existing.getPortfolio().getId());
+        verify(transactionRepo).saveAll(List.of(existing));
+        verify(auditLogService).log(eq(userId), eq("TRANSACTION"), eq(transactionId), eq("TRANSFER"), anyMap(), anyMap());
+        verify(taxLotService).recomputeForSymbol(sourcePortfolioId, "AAPL");
+        verify(taxLotService).recomputeForSymbol(targetPortfolioId, "AAPL");
+        verify(holdingService).recalculate(sourcePortfolioId);
+        verify(holdingService).recalculate(targetPortfolioId);
+        verify(snapshotBackfillService).runIncrementalBackfillAsync(sourcePortfolioId, LocalDate.of(2026, 7, 1));
+        verify(snapshotBackfillService).runIncrementalBackfillAsync(targetPortfolioId, LocalDate.of(2026, 7, 1));
     }
 
     @Test
@@ -211,7 +266,8 @@ class TransactionServiceTest {
                 BigDecimal.ONE,
                 "USD",
                 LocalDate.of(2026, 7, 5),
-                null
+                null,
+                BigDecimal.ZERO
         ));
 
         assertEquals(NOT_FOUND, error.getStatusCode());

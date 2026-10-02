@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,57 +15,22 @@ import {
   TrendingUp,
   XCircle,
 } from "lucide-react";
+import { useTranslation } from "@/components/providers/I18nProvider";
 
 
 type Trend = "up" | "down" | "side" | null;
 type FinalVal = "yes" | "no" | null;
 type DrawdownLevel = 0 | 1 | 2 | 3 | null;
 
-const CONFLUENCE_ITEMS = [
-  "Xu hướng đúng chiều",
-  "Hỗ trợ / Kháng cự",
-  "Supply / Demand / Order Block",
-  "FVG (Fair Value Gap)",
-  "Fibonacci OTE 0.5–0.786",
-  "EMA 20 / 50 / 200",
-];
 
-const ENTRY_SIGNALS = [
-  { id: "pin", label: "Pin Bar", sub: "Bấc dài, thân nhỏ ở vùng hỗ trợ/kháng cự" },
-  { id: "eng", label: "Engulfing", sub: "Nến nuốt — xác nhận đảo chiều mạnh" },
-  { id: "star", label: "Morning Star / Evening Star", sub: "Mẫu hình 3 nến đảo chiều" },
-  { id: "liq", label: "Liquidity Sweep", sub: "Quét đỉnh/đáy trước khi đảo chiều" },
-  { id: "vol", label: "Volume tăng mạnh", sub: "Khối lượng xác nhận lực đẩy" },
-];
-
-const FINAL_QUESTIONS = [
-  "Xu hướng đúng chiều?",
-  "Có ≥ 3 hợp lưu?",
-  "Có tín hiệu xác nhận (≥ 2)?",
-  "R:R ≥ 1:2?",
-  "Không có tin tức lớn sắp ra?",
-];
-
-const DRAWDOWN_LEVELS = [
-  { pct: "< 3%", rule: "Giao dịch bình thường", color: "emerald" },
-  { pct: "3% DD", rule: "Giảm 50% khối lượng", color: "yellow" },
-  { pct: "5% DD", rule: "Chỉ đánh setup A+", color: "orange" },
-  { pct: "10% DD", rule: "Dừng — đánh giá lại hệ thống", color: "red" },
-];
-
-const MINDSET_RULES = [
-  "Không cố giao dịch mỗi ngày",
-  "Không FOMO",
-  "Không gồng lỗ",
-  "Không dời Stop Loss xa hơn",
-  "Không tăng khối lượng để gỡ lỗ",
-  "Bảo vệ vốn trước, kiếm tiền sau",
-];
 
 const fmt2 = (n: number) => n.toFixed(2);
 
-function calcPosition(acc: number, riskPct: number, entry: number, sl: number, tp: number) {
+function calcPosition(acc: number, riskPct: number, entry: number, sl: number, tp: number, trend: Trend) {
   const riskDollar = acc * (riskPct / 100);
+  const validLong = trend === "up" && sl < entry && tp > entry;
+  const validShort = trend === "down" && sl > entry && tp < entry;
+  if (!validLong && !validShort) return null;
   const slDist = Math.abs(entry - sl);
   const tpDist = Math.abs(tp - entry);
   if (slDist <= 0) return null;
@@ -94,6 +59,81 @@ function SectionCard({ icon, title, badge, children }: {
 }
 
 export default function ChecklistPage() {
+  const { t, language } = useTranslation();
+  const isVi = language === "vi";
+
+  const CONFLUENCE_ITEMS = isVi ? [
+    "Xu xu hướng đúng chiều",
+    "Hỗ trợ / Kháng cự",
+    "Supply / Demand / Order Block",
+    "FVG (Fair Value Gap)",
+    "Fibonacci OTE 0.5–0.786",
+    "EMA 20 / 50 / 200",
+  ] : [
+    "Trend aligned",
+    "Support / Resistance",
+    "Supply / Demand / Order Block",
+    "FVG (Fair Value Gap)",
+    "Fibonacci OTE 0.5–0.786",
+    "EMA 20 / 50 / 200",
+  ];
+
+  const ENTRY_SIGNALS = isVi ? [
+    { id: "pin", label: "Pin Bar", sub: "Bấc dài, thân nhỏ ở vùng hỗ trợ/kháng cự" },
+    { id: "eng", label: "Engulfing", sub: "Nến nuốt — xác nhận đảo chiều mạnh" },
+    { id: "star", label: "Morning Star / Evening Star", sub: "Mẫu hình 3 nến đảo chiều" },
+    { id: "liq", label: "Liquidity Sweep", sub: "Quét đỉnh/đáy trước khi đảo chiều" },
+    { id: "vol", label: "Volume tăng mạnh", sub: "Khối lượng xác nhận lực đẩy" },
+  ] : [
+    { id: "pin", label: "Pin Bar", sub: "Long wick, small body at support/resistance" },
+    { id: "eng", label: "Engulfing", sub: "Engulfing candle — strong reversal confirmation" },
+    { id: "star", label: "Morning Star / Evening Star", sub: "3-candle reversal pattern" },
+    { id: "liq", label: "Liquidity Sweep", sub: "Sweep high/low before reversal" },
+    { id: "vol", label: "Volume surge", sub: "Volume confirms push force" },
+  ];
+
+  const FINAL_QUESTIONS = isVi ? [
+    "Xu hướng đúng chiều?",
+    "Có ≥ 3 hợp lưu?",
+    "Có tín hiệu xác nhận (≥ 2)?",
+    "R:R ≥ 1:2?",
+    "Không có tin tức lớn sắp ra?",
+  ] : [
+    "Trend aligned?",
+    "Has ≥ 3 confluences?",
+    "Has confirmation signals (≥ 2)?",
+    "R:R ≥ 1:2?",
+    "No major upcoming news?",
+  ];
+
+  const DRAWDOWN_LEVELS = isVi ? [
+    { pct: "< 3%", rule: "Giao dịch bình thường" },
+    { pct: "3% DD", rule: "Giảm 50% khối lượng" },
+    { pct: "5% DD", rule: "Chỉ đánh setup A+" },
+    { pct: "10% DD", rule: "Dừng — đánh giá lại hệ thống" },
+  ] : [
+    { pct: "< 3%", rule: "Normal trading" },
+    { pct: "3% DD", rule: "Reduce volume by 50%" },
+    { pct: "5% DD", rule: "Trade A+ setups only" },
+    { pct: "10% DD", rule: "Stop — review system" },
+  ];
+
+  const MINDSET_RULES = isVi ? [
+    "Không cố giao dịch mỗi ngày",
+    "Không FOMO",
+    "Không gồng lỗ",
+    "Không dời Stop Loss xa hơn",
+    "Không tăng khối lượng để gỡ lỗ",
+    "Bảo vệ vốn trước, kiếm tiền sau",
+  ] : [
+    "Do not force trades every day",
+    "No FOMO",
+    "Do not hold losses",
+    "Do not move Stop Loss further",
+    "Do not increase volume to chase losses",
+    "Protect capital first, make money second",
+  ];
+
   const [acc, setAcc] = useState("10000");
   const [riskPct, setRiskPct] = useState("0.5");
   const [entry, setEntry] = useState("100");
@@ -106,6 +146,32 @@ export default function ChecklistPage() {
   const [finalAnswers, setFinalAnswers] = useState<FinalVal[]>([null, null, null, null, null]);
   const [ddLevel, setDdLevel] = useState<DrawdownLevel>(null);
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("trading-checklist:v1") || "null");
+      if (saved) {
+        if (typeof saved.acc === "string") setAcc(saved.acc);
+        if (typeof saved.riskPct === "string") setRiskPct(saved.riskPct);
+        if (typeof saved.entry === "string") setEntry(saved.entry);
+        if (typeof saved.sl === "string") setSl(saved.sl);
+        if (typeof saved.tp === "string") setTp(saved.tp);
+        if (["up", "down", "side", null].includes(saved.trend)) setTrend(saved.trend);
+        if (Array.isArray(saved.confluence)) setConfluence(new Set(saved.confluence));
+        if (Array.isArray(saved.entrySignals)) setEntrySignals(new Set(saved.entrySignals));
+        if (Array.isArray(saved.finalAnswers) && saved.finalAnswers.length === 5) setFinalAnswers(saved.finalAnswers);
+        if ([0, 1, 2, 3, null].includes(saved.ddLevel)) setDdLevel(saved.ddLevel);
+        if (Number.isInteger(saved.consecutiveLosses)) setConsecutiveLosses(Math.max(0, Math.min(3, saved.consecutiveLosses)));
+      }
+    } catch {}
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem("trading-checklist:v1", JSON.stringify({ acc, riskPct, entry, sl, tp, trend, confluence: [...confluence], entrySignals: [...entrySignals], finalAnswers, ddLevel, consecutiveLosses, savedAt: new Date().toISOString() }));
+  }, [acc, consecutiveLosses, confluence, ddLevel, entry, entrySignals, finalAnswers, hydrated, riskPct, sl, tp, trend]);
 
   const result = calcPosition(
     parseFloat(acc) || 0,
@@ -113,6 +179,7 @@ export default function ChecklistPage() {
     parseFloat(entry) || 0,
     parseFloat(sl) || 0,
     parseFloat(tp) || 0,
+    trend,
   );
 
   const toggleConf = useCallback((idx: number) => {
@@ -150,7 +217,10 @@ export default function ChecklistPage() {
     && entrySignals.has("liq")
     && passCount === 5
     && result !== null && result.rr >= 2
-    && (parseFloat(riskPct) || 0) <= 0.5;
+    && (parseFloat(riskPct) || 0) > 0
+    && (parseFloat(riskPct) || 0) <= 0.5
+    && (ddLevel === 0 || ddLevel === 1)
+    && consecutiveLosses < 3;
 
   const rrColor = !result
     ? "text-slate-500"
@@ -172,17 +242,21 @@ export default function ChecklistPage() {
     && noCount === 0
     && allAnswered
     && result !== null && result.rr >= 2
+    && (parseFloat(riskPct) || 0) > 0
+    && (parseFloat(riskPct) || 0) <= 1
+    && (ddLevel === 0 || ddLevel === 1 || (ddLevel === 2 && isAplus))
+    && entrySignals.has("liq")
     && consecutiveLosses < 3;
 
   return (
     <>
       <div className="flex flex-1 h-full overflow-hidden">
-      <main className="w-[800px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
+      <main className="w-[820px] shrink-0 border-r border-white/5 h-full overflow-y-auto p-6 space-y-6">
           <header className="mb-7">
-            <p className="text-sm font-medium text-[#54a0ff]">Giao dịch chuẩn quỹ</p>
+            <p className="text-sm font-medium text-[#54a0ff]">{isVi ? "Giao dịch chuẩn quỹ" : "Institutional Prop Trading"}</p>
             <h2 className="rainbow-text mt-2 text-3xl font-black">Trading Checklist</h2>
             <p className="mt-1 text-sm text-slate-400">
-              Kiểm tra 7 bước trước mỗi lệnh — theo tiêu chuẩn quỹ chuyên nghiệp
+              {isVi ? "Kiểm tra 7 bước trước mỗi lệnh — theo tiêu chuẩn quỹ chuyên nghiệp" : "Check 7 steps before every order — professional fund standard"}
             </p>
           </header>
 
@@ -192,21 +266,29 @@ export default function ChecklistPage() {
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 shrink-0 rounded bg-yellow-500/20 px-2 py-0.5 text-xs font-bold text-yellow-300">A+</span>
                 <div>
-                  <p className="text-sm font-bold text-white">Công thức "A+ Setup"</p>
+                  <p className="text-sm font-bold text-white">{isVi ? "Công thức \"A+ Setup\"" : "\"A+ Setup\" Formula"}</p>
                   <pre className="mt-2 text-xs leading-relaxed text-slate-300">
-                    Xu hướng HTF đúng chiều{"\n"}
-                    + ≥ 3 hợp lưu{"\n"}
-                    + Liquidity Sweep{"\n"}
-                    + Nến xác nhận{"\n"}
-                    + Volume tăng{"\n"}
-                    + R:R ≥ 1:2 (tốt nhất 1:3){"\n"}
-                    + Risk 0.25–0.5%{"\n"}
-                    ———————————————{"\n"}
-                    = Được phép vào lệnh
+                    {isVi ? `Xu hướng HTF đúng chiều
++ ≥ 3 hợp lưu
++ Liquidity Sweep
++ Nến xác nhận
++ Volume tăng
++ R:R ≥ 1:2 (tốt nhất 1:3)
++ Risk 0.25–0.5%
+———————————————
+= Được phép vào lệnh` : `HTF Trend Aligned
++ ≥ 3 Confluences
++ Liquidity Sweep
++ Confirmation Candle
++ Volume Increase
++ R:R ≥ 1:2 (optimal 1:3)
++ Risk 0.25–0.5%
+———————————————
+= Trade Allowed`}
                   </pre>
                   {isAplus && (
                     <div className="mt-2 rounded bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300">
-                      ✓ Setup hiện tại đạt chuẩn A+
+                      {isVi ? "✓ Setup hiện tại đạt chuẩn A+" : "✓ Current setup qualifies as A+"}
                     </div>
                   )}
                 </div>
@@ -218,19 +300,19 @@ export default function ChecklistPage() {
             {/* 1. Position size calculator */}
             <SectionCard
               icon={<Calculator className="h-4 w-4 text-blue-400" />}
-              title="Quản lý rủi ro"
-              badge={<Badge className="bg-red-500/15 text-red-300 text-xs">Quan trọng nhất</Badge>}
+              title={isVi ? "Quản lý rủi ro" : "Risk Management"}
+              badge={<Badge className="bg-red-500/15 text-red-300 text-xs">{isVi ? "Quan trọng nhất" : "Most Important"}</Badge>}
             >
               <p className="mb-3 text-xs text-slate-500">
-                Rủi ro 0.25–0.5% tài khoản (tối đa 1%) &bull; Công thức: Khối lượng = (TK × Risk%) / (Entry − SL)
+                {isVi ? "Rủi ro 0.25–0.5% tài khoản (tối đa 1%) • Công thức: Khối lượng = (TK × Risk%) / (Entry − SL)" : "Risk 0.25–0.5% of account (max 1%) • Formula: Volume = (Account × Risk%) / (Entry − SL)"}
               </p>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {[
-                  { label: "Account size ($)", val: acc, set: setAcc, prefix: "$" },
-                  { label: "Risk %", val: riskPct, set: setRiskPct, suffix: "%" },
-                  { label: "Entry price ($)", val: entry, set: setEntry, prefix: "$" },
-                  { label: "Stop loss ($)", val: sl, set: setSl, prefix: "$" },
-                  { label: "Take profit ($)", val: tp, set: setTp, prefix: "$" },
+                  { label: isVi ? "Quy mô tài khoản ($)" : "Account size ($)", val: acc, set: setAcc, prefix: "$" },
+                  { label: isVi ? "Rủi ro %" : "Risk %", val: riskPct, set: setRiskPct, suffix: "%" },
+                  { label: isVi ? "Giá vào lệnh ($)" : "Entry price ($)", val: entry, set: setEntry, prefix: "$" },
+                  { label: isVi ? "Cắt lỗ ($)" : "Stop loss ($)", val: sl, set: setSl, prefix: "$" },
+                  { label: isVi ? "Chốt lời ($)" : "Take profit ($)", val: tp, set: setTp, prefix: "$" },
                 ].map(({ label, val, set, prefix, suffix }) => (
                   <div key={label}>
                     <p className="mb-1 text-xs uppercase tracking-wide text-slate-500">{label}</p>
@@ -250,31 +332,31 @@ export default function ChecklistPage() {
 
               {result && result.rr < 2 && (
                 <div className="mt-3 rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-300">
-                  R:R = 1:{fmt2(result.rr)} — chưa đạt ngưỡng tối thiểu 1:2
+                  {isVi ? `R:R = 1:${fmt2(result.rr)} — chưa đạt ngưỡng tối thiểu 1:2` : `R:R = 1:${fmt2(result.rr)} — minimum threshold 1:2 not met`}
                 </div>
               )}
 
               <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg border border-white/10 bg-slate-950/60 p-3 sm:grid-cols-4">
                 <div>
-                  <p className="text-xs text-slate-500">Position size</p>
+                  <p className="text-xs text-slate-500">{isVi ? "Khối lượng vị thế" : "Position size"}</p>
                   <p className="mt-1 text-base font-medium text-white">
                     {result ? `${fmt2(result.posSize)} units` : "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">R:R ratio</p>
+                  <p className="text-xs text-slate-500">{isVi ? "Tỷ lệ R:R" : "R:R ratio"}</p>
                   <p className={`mt-1 text-base font-medium ${rrColor}`}>
                     {result ? `1 : ${fmt2(result.rr)}` : "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">Profit target</p>
+                  <p className="text-xs text-slate-500">{isVi ? "Mục tiêu lợi nhuận" : "Profit target"}</p>
                   <p className="mt-1 text-base font-medium text-emerald-400">
                     {result ? `$${fmt2(result.profitTarget)}` : "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">Risk per trade</p>
+                  <p className="text-xs text-slate-500">{isVi ? "Rủi ro mỗi lệnh" : "Risk per trade"}</p>
                   <p className={`mt-1 text-base font-medium ${riskColor}`}>
                     {result ? `$${fmt2(result.riskDollar)} (${riskPct}%)` : "—"}
                   </p>
@@ -285,16 +367,16 @@ export default function ChecklistPage() {
             {/* 2. Trend */}
             <SectionCard
               icon={<TrendingUp className="h-4 w-4 text-emerald-400" />}
-              title="Xu hướng (H4 / D1)"
+              title={isVi ? "Xu hướng (H4 / D1)" : "Trend (H4 / D1)"}
               badge={
-                trend === "up" ? <Badge className="bg-emerald-500/15 text-emerald-300 text-xs">Uptrend - chỉ Buy</Badge>
-                  : trend === "down" ? <Badge className="bg-red-500/15 text-red-300 text-xs">Downtrend - chỉ Sell</Badge>
-                  : trend === "side" ? <Badge className="bg-yellow-500/15 text-yellow-300 text-xs">Sideway - không vào</Badge>
-                  : <Badge variant="outline" className="border-white/10 text-slate-500 text-xs">Chưa chọn</Badge>
+                trend === "up" ? <Badge className="bg-emerald-500/15 text-emerald-300 text-xs">{isVi ? "Uptrend - chỉ Buy" : "Uptrend - Buy only"}</Badge>
+                  : trend === "down" ? <Badge className="bg-red-500/15 text-red-300 text-xs">{isVi ? "Downtrend - chỉ Sell" : "Downtrend - Sell only"}</Badge>
+                  : trend === "side" ? <Badge className="bg-yellow-500/15 text-yellow-300 text-xs">{isVi ? "Sideway - không vào" : "Sideway - Do not enter"}</Badge>
+                  : <Badge variant="outline" className="border-white/10 text-slate-500 text-xs">{isVi ? "Chưa chọn" : "Not Selected"}</Badge>
               }
             >
               <p className="mb-3 text-xs text-slate-500">
-                Xác định xu hướng khung H4 hoặc D1 trước khi tìm điểm vào
+                {isVi ? "Xác định xu hướng khung H4 hoặc D1 trước khi tìm điểm vào" : "Confirm H4 or D1 trend before searching for entries"}
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {(["up", "down", "side"] as Trend[]).map(t => (
@@ -310,10 +392,10 @@ export default function ChecklistPage() {
                     }`}
                   >
                     <span className="block font-medium">
-                      {t === "up" ? "↑ Uptrend" : t === "down" ? "↓ Downtrend" : "→ Sideway"}
+                      {t === "up" ? "↑ Uptrend" : t === "down" ? "↓ Downtrend" : (isVi ? "→ Đi ngang" : "→ Sideways")}
                     </span>
                     <span className="mt-0.5 block text-xs opacity-70">
-                      {t === "up" ? "HH + HL" : t === "down" ? "LH + LL" : "Giảm khối lượng"}
+                      {t === "up" ? "HH + HL" : t === "down" ? "LH + LL" : (isVi ? "Giảm khối lượng" : "Reduce volume")}
                     </span>
                   </button>
                 ))}
@@ -357,7 +439,7 @@ export default function ChecklistPage() {
                   />
                 </div>
                 <span className="whitespace-normal min-w-[120px] break-words text-xs text-slate-500">
-                  {confluence.size >= 3 ? "Đủ điều kiện" : `Còn thiếu ${3 - confluence.size}`}
+                  {confluence.size >= 3 ? (isVi ? "Đủ điều kiện" : "Eligible") : (isVi ? `Còn thiếu ${3 - confluence.size}` : `Missing ${3 - confluence.size}`)}
                 </span>
               </div>
             </SectionCard>
@@ -365,15 +447,15 @@ export default function ChecklistPage() {
             {/* 4. Entry confirmation */}
             <SectionCard
               icon={<CandlestickChart className="h-4 w-4 text-yellow-400" />}
-              title="Xác nhận điểm vào"
+              title={isVi ? "Xác nhận điểm vào" : "Entry Confirmation"}
               badge={
                 <Badge className={`text-xs ${entrySignals.size >= 2 ? "bg-emerald-500/15 text-emerald-300" : "bg-yellow-500/15 text-yellow-300"}`}>
-                  {entrySignals.size} tín hiệu {entrySignals.size >= 2 ? "✓" : "- cần ≥ 2"}
+                  {isVi ? `${entrySignals.size} tín hiệu ${entrySignals.size >= 2 ? "✓" : "- cần ≥ 2"}` : `${entrySignals.size} signals ${entrySignals.size >= 2 ? "✓" : "- need ≥ 2"}`}
                 </Badge>
               }
             >
               <p className="mb-3 text-xs text-slate-500">
-                Không đặt Limit mù quáng — chờ tín hiệu xác nhận (tốt nhất có ≥ 2)
+                {isVi ? "Không đặt Limit mù quáng — chờ tín hiệu xác nhận (tốt nhất có ≥ 2)" : "Do not place blind Limit orders — wait for confirmation signals (preferably ≥ 2)"}
               </p>
               <div className="divide-y divide-white/5">
                 {ENTRY_SIGNALS.map(({ id, label, sub }) => (
@@ -399,7 +481,7 @@ export default function ChecklistPage() {
             {/* 5. Final filter */}
             <SectionCard
               icon={<ClipboardCheck className="h-4 w-4 text-red-400" />}
-              title="Bộ lọc cuối — trước khi bấm Buy/Sell"
+              title={isVi ? "Bộ lọc cuối — trước khi bấm Buy/Sell" : "Final Filter — Before clicking Buy/Sell"}
               badge={
                 <Badge className={`text-xs ${passCount === 5 ? "bg-emerald-500/15 text-emerald-300" : noCount > 0 ? "bg-red-500/15 text-red-300" : "bg-slate-500/15 text-slate-400"}`}>
                   {passCount} / 5
@@ -407,7 +489,7 @@ export default function ChecklistPage() {
               }
             >
               <p className="mb-3 text-xs text-slate-500">
-                Chỉ cần 1 câu trả lời là "Không" → bỏ lệnh
+                {isVi ? "Chỉ cần 1 câu trả lời là \"Không\" → bỏ lệnh" : "Just one \"No\" answer → skip the trade"}
               </p>
               <div className="divide-y divide-white/5">
                 {FINAL_QUESTIONS.map((q, idx) => (
@@ -422,7 +504,7 @@ export default function ChecklistPage() {
                             : "border border-white/10 text-slate-500 hover:border-white/20"
                         }`}
                       >
-                        Có
+                        {isVi ? "Có" : "Yes"}
                       </button>
                       <button
                         onClick={() => setFinal(idx, "no")}
@@ -432,7 +514,7 @@ export default function ChecklistPage() {
                             : "border border-white/10 text-slate-500 hover:border-white/20"
                         }`}
                       >
-                        Không
+                        {isVi ? "Không" : "No"}
                       </button>
                     </div>
                   </div>
@@ -441,29 +523,30 @@ export default function ChecklistPage() {
 
               <div className={`mt-3 flex items-center gap-3 rounded-lg p-3 ${
                 !allAnswered ? "bg-slate-900/60"
-                  : noCount === 0 ? "border border-emerald-500/20 bg-emerald-500/10"
+                  : noCount === 0 && canTrade ? "border border-emerald-500/20 bg-emerald-500/10"
                   : "border border-red-500/20 bg-red-500/10"
               }`}>
                 {!allAnswered
                   ? <Circle className="h-5 w-5 shrink-0 text-slate-500" />
-                  : noCount === 0
+                  : noCount === 0 && canTrade
                     ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
                     : <XCircle className="h-5 w-5 shrink-0 text-red-400" />
                 }
                 <div>
                   <p className={`text-sm font-medium ${
                     !allAnswered ? "text-slate-400"
-                      : noCount === 0 ? "text-emerald-300"
+                      : noCount === 0 && canTrade ? "text-emerald-300"
                       : "text-red-300"
                   }`}>
-                    {!allAnswered ? "Chưa đánh giá"
-                      : noCount === 0 ? "A+ Setup — Được phép vào lệnh"
-                      : `Bỏ lệnh - ${noCount} điều kiện chưa đạt`}
+                    {!allAnswered ? (isVi ? "Chưa đánh giá" : "Not Evaluated")
+                      : noCount === 0 && canTrade ? (isVi ? "A+ Setup — Được phép vào lệnh" : "A+ Setup — Trade Allowed")
+                      : (isVi ? `Bỏ lệnh - ${noCount} điều kiện chưa đạt` : `Skip trade - ${noCount} conditions not met`)}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {!allAnswered ? "Trả lời đủ 5 câu để nhận kết quả"
-                      : noCount === 0 ? "Tất cả điều kiện đạt. Kiểm tra position size trước khi bấm."
-                      : "Trader chuyên nghiệp không vào lệnh khi thiếu bất kỳ điều kiện nào."}
+                    {!allAnswered ? (isVi ? "Trả lời đủ 5 câu để nhận kết quả" : "Answer all 5 questions to see results")
+                      : noCount === 0 && canTrade ? (isVi ? "Tất cả điều kiện đạt. Kiểm tra position size trước khi bấm." : "All conditions met. Check position size before placing.")
+                      : noCount === 0 ? (isVi ? "Các câu trả lời đạt nhưng còn cổng giao dịch chưa đạt." : "Final answers pass, but other trade gates are still unmet.")
+                      : (isVi ? "Trader chuyên nghiệp không vào lệnh khi thiếu bất kỳ điều kiện nào." : "Professional traders do not enter trades when any condition is missing.")}
                   </p>
                 </div>
               </div>
@@ -472,15 +555,15 @@ export default function ChecklistPage() {
             {/* 6. Consecutive losses + Drawdown */}
             <SectionCard
               icon={<ShieldAlert className="h-4 w-4 text-red-400" />}
-              title="Quản lý thua lỗ"
+              title={isVi ? "Quản lý thua lỗ" : "Loss Management"}
               badge={
                 consecutiveLosses >= 3
-                  ? <Badge className="bg-red-500/15 text-red-300 text-xs">Dừng giao dịch hôm nay</Badge>
-                  : <Badge className="bg-yellow-500/15 text-yellow-300 text-xs">{consecutiveLosses}/3 lệnh thua</Badge>
+                  ? <Badge className="bg-red-500/15 text-red-300 text-xs">{isVi ? "Dừng giao dịch hôm nay" : "Stop Trading Today"}</Badge>
+                  : <Badge className="bg-yellow-500/15 text-yellow-300 text-xs">{isVi ? `${consecutiveLosses}/3 lệnh thua` : `${consecutiveLosses}/3 loss trades`}</Badge>
               }
             >
               <div className="mb-4">
-                <p className="mb-2 text-xs text-slate-500">Số lệnh thua liên tiếp</p>
+                <p className="mb-2 text-xs text-slate-500">{isVi ? "Số lệnh thua liên tiếp" : "Consecutive losses"}</p>
                 <div className="flex items-center gap-2">
                   {[0, 1, 2, 3].map(n => (
                     <button
@@ -497,13 +580,13 @@ export default function ChecklistPage() {
                   ))}
                   <span className="ml-2 text-xs text-slate-500">
                     {consecutiveLosses >= 3
-                      ? "⚠ Nghỉ trong ngày"
-                      : `Còn ${3 - consecutiveLosses} lệnh thua trước khi phải dừng`}
+                      ? (isVi ? "⚠ Nghỉ trong ngày" : "⚠ Stop for today")
+                      : (isVi ? `Còn ${3 - consecutiveLosses} lệnh thua trước khi phải dừng` : `${3 - consecutiveLosses} more losses before stop`)}
                   </span>
                 </div>
               </div>
 
-              <p className="mb-2 text-xs text-slate-500">Mức drawdown hiện tại</p>
+              <p className="mb-2 text-xs text-slate-500">{isVi ? "Mức drawdown hiện tại" : "Current drawdown level"}</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {DRAWDOWN_LEVELS.map((item, idx) => (
                   <button
@@ -533,7 +616,7 @@ export default function ChecklistPage() {
             {/* 7. Professional mindset */}
             <SectionCard
               icon={<CheckCircle2 className="h-4 w-4 text-emerald-400" />}
-              title="Tư duy quỹ chuyên nghiệp"
+              title={isVi ? "Tư duy quỹ chuyên nghiệp" : "Professional Fund Mindset"}
             >
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {MINDSET_RULES.map((rule, idx) => (
@@ -552,9 +635,9 @@ export default function ChecklistPage() {
                   <div className="flex items-center gap-3">
                     <CheckCircle2 className="h-8 w-8 text-emerald-400" />
                     <div>
-                      <p className="text-lg font-bold text-emerald-300">✓ Đủ điều kiện vào lệnh</p>
+                      <p className="text-lg font-bold text-emerald-300">{isVi ? "✓ Đủ điều kiện vào lệnh" : "✓ Trade Allowed"}</p>
                       <p className="text-sm text-slate-400">
-                        Tất cả 7 bước đều đạt. Kiểm tra lại position size ({riskPct}%) và R:R (1:{result ? fmt2(result.rr) : "?"}) trước khi bấm.
+                        {isVi ? `Tất cả 7 bước đều đạt. Kiểm tra lại position size (${riskPct}%) và R:R (1:${result ? fmt2(result.rr) : "?"}) trước khi bấm.` : `All 7 steps met. Double check position size (${riskPct}%) and R:R (1:${result ? fmt2(result.rr) : "?"}) before entering.`}
                       </p>
                     </div>
                   </div>
@@ -568,9 +651,9 @@ export default function ChecklistPage() {
                   <div className="flex items-center gap-3">
                     <XCircle className="h-8 w-8 text-red-400" />
                     <div>
-                      <p className="text-lg font-bold text-red-300">✗ Dừng giao dịch hôm nay</p>
+                      <p className="text-lg font-bold text-red-300">{isVi ? "✗ Dừng giao dịch hôm nay" : "✗ Stop Trading Today"}</p>
                       <p className="text-sm text-slate-400">
-                        3 lệnh thua liên tiếp. Nghỉ ngơi, đánh giá lại. Bảo vệ vốn trước, kiếm tiền sau.
+                        {isVi ? "3 lệnh thua liên tiếp. Nghỉ ngơi, đánh giá lại. Bảo vệ vốn trước, kiếm tiền sau." : "3 consecutive losses. Rest, re-evaluate. Protect capital first, make money second."}
                       </p>
                     </div>
                   </div>
@@ -579,8 +662,87 @@ export default function ChecklistPage() {
             )}
           </div>
         </main>
-      <div className="flex-1 h-full overflow-y-auto p-6 bg-transparent" />
-    </div>
+        
+        {/* Right Analytics Workspace */}
+        <div className="flex-1 h-full overflow-y-auto p-6 space-y-6 z-10">
+          {/* Position Sizing Calculator Results */}
+          <div className="antigravity-panel p-5 space-y-4 bg-transparent">
+            <div className="border-b border-white/5 pb-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">{isVi ? "Thông số lệnh dự kiến" : "Expected Order Parameters"}</h3>
+            </div>
+            
+            {result ? (
+              <div className="space-y-3.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">{isVi ? "Quy mô vị thế (Size):" : "Position size (Size):"}</span>
+                  <span className="font-mono font-bold text-white text-sm">{fmt2(result.posSize)} units</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">{isVi ? "Tỷ lệ Risk : Reward:" : "Risk : Reward ratio:"}</span>
+                  <span className={`font-mono font-bold text-sm ${rrColor}`}>1 : {fmt2(result.rr)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">{isVi ? "Mục tiêu lợi nhuận (Target):" : "Profit target (Target):"}</span>
+                  <span className="font-mono font-bold text-emerald-400 text-sm">${fmt2(result.profitTarget)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">{isVi ? "Rủi ro chấp nhận (Risk):" : "Accepted risk (Risk):"}</span>
+                  <span className={`font-mono font-bold text-sm ${riskColor}`}>${fmt2(result.riskDollar)} ({riskPct}%)</span>
+                </div>
+                <div className="flex justify-between items-center text-xs border-t border-white/5 pt-2.5">
+                  <span className="text-slate-500">{isVi ? "Điểm vào lệnh (Entry):" : "Entry price (Entry):"}</span>
+                  <span className="font-mono text-slate-300 font-bold">${entry}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">{isVi ? "Điểm cắt lỗ (Stop Loss):" : "Stop loss (Stop Loss):"}</span>
+                  <span className="font-mono text-red-400 font-bold">${sl}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">{isVi ? "Điểm chốt lời (Take Profit):" : "Take profit (Take Profit):"}</span>
+                  <span className="font-mono text-emerald-400 font-bold">${tp}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-550 italic text-center py-4">{isVi ? "Nhập đủ thông số tính toán ở bên trái" : "Enter all parameters on the left to calculate"}</p>
+            )}
+          </div>
+
+          {/* Capital Protection Rule Card */}
+          {consecutiveLosses >= 3 && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-5 space-y-3">
+              <h4 className="text-xs font-bold text-red-400 uppercase tracking-wider">{isVi ? "⚠ DỪNG GIAO DỊCH NGAY" : "⚠ STOP TRADING NOW"}</h4>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {isVi ? "Bạn đã chạm giới hạn 3 lệnh thua liên tiếp trong hôm nay. Việc tiếp tục giao dịch có nguy cơ cao dẫn đến trả thù thị trường (revenge trading) và cháy tài khoản. Nghỉ ngơi và quay lại vào ngày mai." : "You have reached the limit of 3 consecutive loss trades today. Continuing to trade carries a high risk of revenge trading and blowing your account. Take a rest and return tomorrow."}
+              </p>
+            </div>
+          )}
+
+          {/* Checklist Setup Badge Alert */}
+          {isAplus && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-5 space-y-1.5">
+              <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">{isVi ? "A+ SETUP ĐẠT CHUẨN" : "A+ SETUP QUALIFIED"}</h4>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {isVi ? "Tất cả điều kiện thiết lập giao dịch chất lượng cao đã sẵn sàng. Giao dịch này đáp ứng đầy đủ tiêu chí quản lý vốn của quỹ." : "All conditions for a high-quality trading setup are ready. This trade fully meets institutional capital management criteria."}
+              </p>
+            </div>
+          )}
+
+          {/* Professional Mindset Card */}
+          <div className="antigravity-panel p-5 space-y-3 bg-transparent">
+            <div className="border-b border-white/5 pb-2.5">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">{isVi ? "Kỷ luật Trader chuyên nghiệp" : "Professional Trader Discipline"}</h3>
+            </div>
+            <ul className="space-y-2 text-xs text-slate-400">
+              {MINDSET_RULES.map((rule, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className="text-[var(--accent)] mt-0.5">•</span>
+                  <span>{rule}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
     </>
   );
 }

@@ -55,6 +55,12 @@ interface DeepAnalysisResponse {
   }>;
 }
 
+function asFiniteNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+const SNAPSHOT_EPSILON = 1;
+
 function getAuthHeaders() {
   if (typeof window === "undefined") return { "Content-Type": "application/json" };
   const token = localStorage.getItem("token");
@@ -245,9 +251,31 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
     }
   }
 
+  const normalizedSnapshots = useMemo(() => {
+    const deduped = [...rawSnapshots]
+      .filter(snapshot => snapshot.snapshotDate)
+      .sort((a, b) => a.snapshotDate.localeCompare(b.snapshotDate))
+      .reduce<Snapshot[]>((acc, snapshot) => {
+        const previous = acc[acc.length - 1];
+        if (previous?.snapshotDate === snapshot.snapshotDate) {
+          acc[acc.length - 1] = snapshot;
+        } else {
+          acc.push(snapshot);
+        }
+        return acc;
+      }, []);
+
+    const firstMeaningfulIndex = deduped.findIndex(snapshot =>
+      asFiniteNumber(snapshot.portfolioValue) > 0 || asFiniteNumber(snapshot.investedAmount) > 0
+    );
+
+    if (firstMeaningfulIndex === -1) return deduped;
+    return deduped.slice(firstMeaningfulIndex);
+  }, [rawSnapshots]);
+
   // Filter snapshots based on selected timeRange
   const filteredSnapshots = useMemo(() => {
-    if (timeRange === "All") return rawSnapshots;
+    if (timeRange === "All") return normalizedSnapshots;
     
     const now = new Date();
     let startDate = new Date();
@@ -260,8 +288,8 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
     else if (timeRange === "3Y") startDate.setFullYear(now.getFullYear() - 3);
     else if (timeRange === "YTD") startDate = new Date(now.getFullYear(), 0, 1);
 
-    return rawSnapshots.filter(s => new Date(s.snapshotDate) >= startDate);
-  }, [rawSnapshots, timeRange]);
+    return normalizedSnapshots.filter(s => new Date(s.snapshotDate) >= startDate);
+  }, [normalizedSnapshots, timeRange]);
 
   // Client-side Risk Metrics Calculation
   const derivedMetrics = useMemo(() => {
@@ -308,14 +336,29 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
       }
     }
 
+    if (dailyReturns.length < 2) {
+      return {
+        insufficient: true,
+        totalReturn: 0,
+        annualizedReturn: 0,
+        volatility: 0,
+        sharpeRatio: 0,
+        sortinoRatio: 0,
+        maxDrawdown: maxDrawdownVal,
+        valueAtRisk: 0,
+        dailyReturns,
+        volatilityAnnualized: 0
+      };
+    }
+
     const meanReturn = dailyReturns.reduce((sum, r) => sum + r, 0) / dailyReturns.length;
-    const variance = dailyReturns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / (dailyReturns.length - 1);
+    const variance = dailyReturns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / Math.max(1, dailyReturns.length - 1);
     const volatilityDaily = Math.sqrt(variance);
     const volatilityAnnualized = volatilityDaily * Math.sqrt(252);
     const annualizedReturn = meanReturn * 252;
 
     const negativeReturns = dailyReturns.filter(r => r < 0);
-    const downsideVariance = negativeReturns.reduce((sum, r) => sum + Math.pow(r, 2), 0) / (dailyReturns.length - 1);
+    const downsideVariance = negativeReturns.reduce((sum, r) => sum + Math.pow(r, 2), 0) / Math.max(1, dailyReturns.length - 1);
     const downsideDeviation = Math.sqrt(downsideVariance) * Math.sqrt(252);
 
     const sharpe = volatilityAnnualized > 0 ? (annualizedReturn - RISK_FREE_RATE) : 0;
@@ -329,9 +372,9 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
     const varIdx = Math.floor(sortedReturns.length * 0.05);
     const valueAtRisk = sortedReturns.length > 0 ? Math.abs(sortedReturns[varIdx]) : 0;
 
-    const firstVal = filteredSnapshots[0].portfolioValue ?? 1;
+    const firstVal = filteredSnapshots[0].portfolioValue ?? 0;
     const lastVal = filteredSnapshots[n - 1].portfolioValue ?? 0;
-    const totalReturn = (lastVal - firstVal) / firstVal;
+    const totalReturn = firstVal > 0 ? (lastVal - firstVal) / firstVal : 0;
 
     return {
       insufficient: false,
@@ -376,18 +419,28 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
 
   }, [derivedMetrics, volatilityThreshold, drawdownThreshold, varThreshold, sharpeThreshold, sortinoThreshold]);
 
+  const chartSnapshots = useMemo(() => {
+    const firstVisibleIndex = filteredSnapshots.findIndex(snapshot =>
+      asFiniteNumber(snapshot.portfolioValue) > SNAPSHOT_EPSILON ||
+      asFiniteNumber(snapshot.investedAmount) > SNAPSHOT_EPSILON
+    );
+
+    if (firstVisibleIndex <= 0) return filteredSnapshots;
+    return filteredSnapshots.slice(firstVisibleIndex);
+  }, [filteredSnapshots]);
+
   // Normalize Benchmark prices with portfolio starting value
   const chartData = useMemo(() => {
-    if (filteredSnapshots.length === 0) return [];
+    if (chartSnapshots.length === 0) return [];
 
-    const firstPortVal = filteredSnapshots[0].portfolioValue ?? 0;
+    const firstPortVal = chartSnapshots[0].portfolioValue ?? 0;
     
     // Normalize Benchmark prices with portfolio starting value using forward-filling
     const normalizedBenchmarkMap: Record<string, number> = {};
     if (benchmarkPrices.length > 0) {
       const sortedBenchmark = [...benchmarkPrices].sort((a, b) => a.date.localeCompare(b.date));
       
-      const startSnapDate = filteredSnapshots[0].snapshotDate;
+      const startSnapDate = chartSnapshots[0].snapshotDate;
       const startBenchPoint = sortedBenchmark.find(p => p.date >= startSnapDate) || sortedBenchmark[0];
       const startBenchPrice = startBenchPoint ? startBenchPoint.close : 0;
 
@@ -395,7 +448,7 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
         let lastKnownPrice = sortedBenchmark[0].close;
         let bIdx = 0;
         
-        filteredSnapshots.forEach(s => {
+        chartSnapshots.forEach(s => {
           while (bIdx < sortedBenchmark.length && sortedBenchmark[bIdx].date <= s.snapshotDate) {
             lastKnownPrice = sortedBenchmark[bIdx].close;
             bIdx++;
@@ -405,8 +458,8 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
       }
     }
 
-    return filteredSnapshots.map((s, idx) => {
-      const prevVal = idx > 0 ? (filteredSnapshots[idx - 1].portfolioValue ?? 0) : 0;
+    return chartSnapshots.map((s, idx) => {
+      const prevVal = idx > 0 ? (chartSnapshots[idx - 1].portfolioValue ?? 0) : 0;
       const currVal = s.portfolioValue ?? 0;
       const dailyChange = prevVal > 0 ? (currVal - prevVal) / prevVal : 0;
 
@@ -418,7 +471,7 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
         dailyReturn: dailyChange
       };
     });
-  }, [filteredSnapshots, benchmarkPrices]);
+  }, [chartSnapshots, benchmarkPrices]);
 
   // Export handlers
   const getExportData = () => {
@@ -596,7 +649,7 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
 
       {/* Warning banner */}
       {showWarningBanner && (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 flex items-start gap-3 no-print">
+        <div className="rounded-xl border border-red-500/20 bg-[#16131D] px-4 py-3 flex items-start gap-3 no-print">
           <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
           <div>
             <h5 className="text-xs font-bold text-red-400 uppercase tracking-wider">Cảnh báo rủi ro danh mục</h5>
@@ -688,7 +741,7 @@ export function PortfolioOverviewPanel({ portfolioId }: { portfolioId: string })
       )}
 
       {message && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-300 no-print">
+        <div className="rounded-xl border border-amber-500/20 bg-[#16131D] px-3 py-2 text-xs text-amber-300 no-print">
           {message}
         </div>
       )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslation } from "@/components/providers/I18nProvider";
 
 type RecoveryEntry = {
   key: string;
@@ -28,6 +29,8 @@ const readRecoveryEntries = (): RecoveryEntry[] =>
     });
 
 export default function RecoverDataPage() {
+  const { language } = useTranslation();
+  const isVi = language === "vi";
   const [entries, setEntries] = useState<RecoveryEntry[]>([]);
   const [copied, setCopied] = useState(false);
 
@@ -81,13 +84,12 @@ export default function RecoverDataPage() {
           borderRadius: "18px",
         }}
       >
-        <p style={{ color: "#51c7ff", margin: 0 }}>KHÔI PHỤC DANH MỤC</p>
+        <p style={{ color: "#51c7ff", margin: 0 }}>{isVi ? "KHÔI PHỤC DANH MỤC" : "PORTFOLIO RECOVERY"}</p>
         <h1 style={{ fontSize: "36px", margin: "12px 0" }}>
-          Sao lưu dữ liệu còn trong trình duyệt
+          {isVi ? "Sao lưu dữ liệu còn trong trình duyệt" : "Backup in-browser data"}
         </h1>
         <p style={{ color: "#aebbd0", lineHeight: 1.6 }}>
-          Trang này chỉ đọc dữ liệu lưu tại địa chỉ hiện tại. Nó không ghi, xóa
-          hoặc thay đổi database.
+          {isVi ? "Trang này chỉ đọc dữ liệu lưu tại địa chỉ hiện tại. Nó không ghi, xóa hoặc thay đổi database." : "This page only reads data stored at the current origin. It does not write, delete, or modify the database."}
         </p>
 
         <div
@@ -100,8 +102,8 @@ export default function RecoverDataPage() {
           }}
         >
           {entries.length
-            ? `Đã tìm thấy ${entries.length} vùng dữ liệu có thể khôi phục.`
-            : "Không tìm thấy cache danh mục tại địa chỉ này. Hãy mở đúng localhost:3000/recover-data."}
+            ? (isVi ? `Đã tìm thấy ${entries.length} vùng dữ liệu có thể khôi phục.` : `Found ${entries.length} recoverable data regions.`)
+            : (isVi ? "Không tìm thấy cache danh mục tại địa chỉ này. Hãy mở đúng localhost:3000/recover-data." : "No portfolio cache found at this origin. Please open the correct localhost:3000/recover-data.")}
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
@@ -119,7 +121,7 @@ export default function RecoverDataPage() {
               background: entries.length ? "#ffb347" : "#667085",
             }}
           >
-            Tải file khôi phục JSON
+            {isVi ? "Tải file khôi phục JSON" : "Download JSON recovery file"}
           </button>
           <button
             type="button"
@@ -135,13 +137,13 @@ export default function RecoverDataPage() {
               background: "transparent",
             }}
           >
-            {copied ? "Đã sao chép" : "Sao chép toàn bộ"}
+            {copied ? (isVi ? "Đã sao chép" : "Copied") : (isVi ? "Sao chép toàn bộ" : "Copy All")}
           </button>
         </div>
 
         {entries.length > 0 && (
           <div style={{ marginTop: "28px" }}>
-            <p style={{ color: "#aebbd0" }}>Các vùng dữ liệu tìm thấy:</p>
+            <p style={{ color: "#aebbd0" }}>{isVi ? "Các vùng dữ liệu tìm thấy:" : "Discovered data regions:"}</p>
             {entries.map((entry) => (
               <div
                 key={entry.key}
@@ -153,8 +155,7 @@ export default function RecoverDataPage() {
                   overflowWrap: "anywhere",
                 }}
               >
-                {entry.key} ({entry.rawValue.length.toLocaleString("vi-VN")} ký
-                tự)
+                {entry.key} ({entry.rawValue.length.toLocaleString(isVi ? "vi-VN" : "en-US")} {isVi ? "ký tự" : "characters"})
               </div>
             ))}
           </div>

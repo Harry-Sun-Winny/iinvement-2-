@@ -1,5 +1,6 @@
 backend/target/
 frontend/.next/
+frontend/.next-*/
 frontend/node_modules/
 mobile/.dart_tool/
 mobile/build/
@@ -7,5 +8,12 @@ mobile/build/
 *.tsbuildinfo
 *.code-workspace
 work/
+backups/
+*.sql.gz
+*.backup
+*.exe
+backend/token.txt
+ALL_CODE_FRONTEND_BACKEND.txt
+CODE_3_TRANG_PHAN_TICH_THAM_DINH_CHAM_DIEM.txt
 .env
 .env.*

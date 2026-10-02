@@ -15,10 +15,22 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { getMarketDetails } from "@/app/lib/api";
+import { useTranslation } from "@/components/providers/I18nProvider";
 
-const TABS = ["Position", "Risk", "Valuation", "Analysis", "Income", "History"];
+const TABS = [
+  { key: "Position", vi: "Vị thế", en: "Position" },
+  { key: "Risk", vi: "Rủi ro", en: "Risk" },
+  { key: "Valuation", vi: "Định giá", en: "Valuation" },
+  { key: "Analysis", vi: "Phân tích", en: "Analysis" },
+  { key: "Income", vi: "Thu nhập", en: "Income" },
+  { key: "History", vi: "Lịch sử", en: "History" },
+];
 
-export function InstitutionalDetailPanel({ positions, transactions }: { positions: HoldingExt[], transactions: any[] }) {
+import { fmtMoney } from "../../app/lib/finance/currency";
+
+export function InstitutionalDetailPanel({ positions, transactions, currency = "USD" }: { positions: any[], transactions: any[], currency?: string }) {
+  const { language } = useTranslation();
+  const isVi = language === "vi";
   const [selectedSymbol, setSelectedSymbol] = useState<string>("");
   const [activeTab, setActiveTab] = useState("Position");
   const [marketData, setMarketData] = useState<any>(null);
@@ -37,7 +49,7 @@ export function InstitutionalDetailPanel({ positions, transactions }: { position
   // Automatically select the largest holding if no symbol is selected yet
   useEffect(() => {
     if (!selectedSymbol && positions.length > 0) {
-      const sorted = [...positions].sort((a, b) => b.marketValue - a.marketValue);
+      const sorted = [...positions].sort((a, b) => (b.marketValueDisplay ?? b.marketValue) - (a.marketValueDisplay ?? a.marketValue));
       setSelectedSymbol(sorted[0].symbol);
     }
   }, [positions, selectedSymbol]);
@@ -47,7 +59,7 @@ export function InstitutionalDetailPanel({ positions, transactions }: { position
   if (!holding) {
     return (
       <div className="h-full flex items-center justify-center text-slate-500 font-medium">
-        Select an asset to view institutional details.
+        {isVi ? "Chọn một tài sản để xem chi tiết tổ chức." : "Select an asset to view institutional details."}
       </div>
     );
   }
@@ -61,7 +73,7 @@ export function InstitutionalDetailPanel({ positions, transactions }: { position
           <div className="space-y-1">
             <Select value={selectedSymbol} onValueChange={setSelectedSymbol}>
               <SelectTrigger className="w-[200px] bg-slate-900 border-slate-700 text-xl font-black text-white h-auto py-2">
-                <SelectValue placeholder="Select asset" />
+                <SelectValue placeholder={isVi ? "Chọn tài sản" : "Select asset"} />
               </SelectTrigger>
               <SelectContent className="bg-slate-900 border-slate-800">
                 {positions.map(p => (
@@ -76,13 +88,13 @@ export function InstitutionalDetailPanel({ positions, transactions }: { position
 
           <div className="text-right">
             <p className="text-3xl font-black tracking-tight text-white">
-              ${(holding.currentPrice ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              {fmtMoney(holding.currentPriceDisplay ?? holding.currentPrice ?? 0, currency)}
             </p>
             <p className="text-sm font-bold text-emerald-400">
               -- (--) {/* Daily return unavailable in holding object */}
             </p>
             <Badge variant="outline" className="mt-2 text-[10px] bg-emerald-500/10 text-emerald-400 border-emerald-500/30 uppercase">
-              Market Open
+              {isVi ? "Thị trường mở cửa" : "Market Open"}
             </Badge>
           </div>
         </div>
@@ -91,15 +103,15 @@ export function InstitutionalDetailPanel({ positions, transactions }: { position
         <div className="flex space-x-6">
           {TABS.map(tab => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
               className={`pb-4 text-sm font-bold uppercase tracking-wider transition-colors ${
-                activeTab === tab 
+                activeTab === tab.key 
                   ? "text-blue-400 border-b-2 border-blue-400" 
                   : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              {tab}
+              {isVi ? tab.vi : tab.en}
             </button>
           ))}
         </div>
@@ -107,7 +119,7 @@ export function InstitutionalDetailPanel({ positions, transactions }: { position
 
       {/* Tab Content */}
       <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-        {activeTab === "Position" && <PositionTab holding={holding} transactions={transactions} marketData={marketData} />}
+        {activeTab === "Position" && <PositionTab holding={holding} transactions={transactions} marketData={marketData} currency={currency} />}
         {activeTab === "Risk" && <RiskTab holding={holding} marketData={marketData} />}
         {activeTab === "Valuation" && <ValuationTab holding={holding} marketData={marketData} />}
         {activeTab === "Analysis" && <AnalysisTab holding={holding} marketData={marketData} />}

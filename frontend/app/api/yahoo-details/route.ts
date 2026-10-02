@@ -1,4 +1,3 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import { NextRequest, NextResponse } from "next/server";
 import YahooFinanceClass from "yahoo-finance2";
 const yahooFinance = new YahooFinanceClass();
@@ -11,8 +10,9 @@ function num(val: any): number | null {
 }
 
 export async function GET(req: NextRequest) {
-  const symbol = req.nextUrl.searchParams.get("symbol")?.trim().toUpperCase();
-  if (!symbol) return NextResponse.json({ error: "No symbol" }, { status: 400 });
+  const rawSymbol = req.nextUrl.searchParams.get("symbol");
+  if (!rawSymbol) return NextResponse.json({ error: "No symbol" }, { status: 400 });
+  const symbol = rawSymbol.trim().toUpperCase().replace(/[\s.,]+$/, "");
 
   try {
     const summary = await yahooFinance.quoteSummary(symbol, {

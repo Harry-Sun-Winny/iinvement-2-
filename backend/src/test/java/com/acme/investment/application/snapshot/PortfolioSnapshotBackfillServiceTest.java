@@ -4,6 +4,7 @@ import com.acme.investment.application.market.MarketDataService;
 import com.acme.investment.domain.market.HistoricalPrice;
 import com.acme.investment.infrastructure.persistence.portfolio.PortfolioEntity;
 import com.acme.investment.infrastructure.persistence.portfolio.PortfolioJpaRepository;
+import com.acme.investment.infrastructure.persistence.asset.AssetJpaRepository;
 import com.acme.investment.infrastructure.persistence.snapshot.PortfolioSnapshotEntity;
 import com.acme.investment.infrastructure.persistence.snapshot.PortfolioSnapshotRepository;
 import com.acme.investment.infrastructure.persistence.transaction.TransactionEntity;
@@ -35,6 +36,7 @@ class PortfolioSnapshotBackfillServiceTest {
         PortfolioSnapshotRepository snapshotRepository = mock(PortfolioSnapshotRepository.class);
         TransactionJpaRepository transactionRepository = mock(TransactionJpaRepository.class);
         PortfolioJpaRepository portfolioRepository = mock(PortfolioJpaRepository.class);
+        AssetJpaRepository assetRepository = mock(AssetJpaRepository.class);
         MarketDataService marketDataService = mock(MarketDataService.class);
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
@@ -42,6 +44,7 @@ class PortfolioSnapshotBackfillServiceTest {
                 transactionRepository,
                 snapshotRepository,
                 portfolioRepository,
+                assetRepository,
                 marketDataService,
                 transactionManager,
                 2
@@ -72,13 +75,15 @@ class PortfolioSnapshotBackfillServiceTest {
 
         PortfolioSnapshotEntity firstDay = savedSnapshots.get(0);
         assertEquals(LocalDate.of(2026, 1, 1), firstDay.getSnapshotDate());
-        assertEquals(0, BigDecimal.valueOf(0).compareTo(firstDay.getTotalCost()));
-        assertEquals(0, BigDecimal.valueOf(-5).compareTo(firstDay.getTotalValue()));
+        assertEquals(0, BigDecimal.valueOf(1005).compareTo(firstDay.getTotalCost()));
+        assertEquals(0, BigDecimal.valueOf(1000).compareTo(firstDay.getTotalValue()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(firstDay.getCashBalance()));
 
         PortfolioSnapshotEntity secondDay = savedSnapshots.get(1);
         assertEquals(LocalDate.of(2026, 1, 2), secondDay.getSnapshotDate());
-        assertEquals(0, BigDecimal.valueOf(36).compareTo(secondDay.getTotalCost()));
-        assertEquals(0, BigDecimal.valueOf(192).compareTo(secondDay.getTotalValue()));
+        assertEquals(0, BigDecimal.valueOf(804).compareTo(secondDay.getTotalCost()));
+        assertEquals(0, BigDecimal.valueOf(960).compareTo(secondDay.getTotalValue()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(secondDay.getCashBalance()));
     }
 
     @Test
@@ -87,6 +92,7 @@ class PortfolioSnapshotBackfillServiceTest {
         PortfolioSnapshotRepository snapshotRepository = mock(PortfolioSnapshotRepository.class);
         TransactionJpaRepository transactionRepository = mock(TransactionJpaRepository.class);
         PortfolioJpaRepository portfolioRepository = mock(PortfolioJpaRepository.class);
+        AssetJpaRepository assetRepository = mock(AssetJpaRepository.class);
         MarketDataService marketDataService = mock(MarketDataService.class);
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
@@ -94,6 +100,7 @@ class PortfolioSnapshotBackfillServiceTest {
                 transactionRepository,
                 snapshotRepository,
                 portfolioRepository,
+                assetRepository,
                 marketDataService,
                 transactionManager,
                 2

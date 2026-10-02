@@ -4,20 +4,23 @@ import { useMemo, useState, useEffect } from "react";
 import AutoSizedChart from "@/components/charts/AutoSizedChart";
 import { useTableTheme } from "../../lib/table-theme";
 import { motion } from "framer-motion";
-import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
-import { Activity, Banknote, BriefcaseBusiness, DollarSign, LineChart, Percent, TrendingDown, TrendingUp } from "lucide-react";
+import { Area, AreaChart, CartesianGrid, Cell, Line, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
+import { Banknote, BriefcaseBusiness, DollarSign, LineChart, Percent, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import ChartTooltip from "@/components/charts/ChartTooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Transaction } from "../../lib/api";
+import { convertCurrency } from "../../lib/finance/currency";
 
 interface Props {
   transactions: Transaction[];
   currentPrices: Record<string, number>;
   currencyRates: Record<string, number>;
   dataReady: boolean;
+  historyPricesMap?: Record<string, Array<{ date: string; close: number | null; adjustedClose?: number | null }>>;
+  historyPricesLoaded?: boolean;
 }
 
 type RangeKey = "1D" | "7D" | "30D" | "3M" | "1Y" | "ALL";
@@ -45,6 +48,18 @@ interface ChartPoint {
   value: number;
   invested: number;
   pnl: number;
+  buyTotal: number;
+  sellTotal: number;
+  buyAmount: number;
+  sellAmount: number;
+  buyMarker: number | null;
+  sellMarker: number | null;
+}
+
+interface HistoricalPointCursor {
+  index: number;
+  lastPrice: number | null;
+  points: Array<{ date: string; price: number }>;
 }
 
 function summarizeState(state: Record<string, { quantity: number; cost: number; lastPrice: number }>) {
@@ -95,15 +110,39 @@ function formatQuantity(value: number | null | undefined) {
 // Heuristic guess - không chính xác 100%, nên thay bằng field category từ backend.
 // Ví dụ: công ty tên chứa "USD" sẽ bị nhận nhầm là CASH.
 // TODO: Khi backend Transaction có field category/assetCategory, ưu tiên dùng field đó.
-function assetType(symbol: string, name = "", backendCategory?: string): AssetFilter {
+export function assetType(symbol: string, name = "", backendCategory?: string): AssetFilter {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const text = `${normalizedSymbol} ${name}`.toUpperCase();
+  const cryptoSymbols = new Set([
+    "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "DOT", "AVAX", "MATIC",
+    "POL", "LINK", "LTC", "BCH", "ATOM", "UNI", "AAVE", "NEAR", "APT", "ARB",
+    "OP", "SUI", "TON", "TRX", "SHIB", "PEPE", "WIF", "BONK", "ICP", "FIL",
+    "HBAR", "XLM", "ETC", "XMR", "USDT", "USDC", "DAI", "FDUSD", "TUSD",
+  ]);
+  if (
+    cryptoSymbols.has(normalizedSymbol) ||
+    /\b(BITCOIN|ETHEREUM|SOLANA|BINANCE COIN|RIPPLE|CARDANO|DOGECOIN|POLKADOT|AVALANCHE|CHAINLINK|STABLECOIN)\b/.test(text)
+  ) return "CRYPTO";
   // Ưu tiên dùng category từ backend nếu có
   if (backendCategory) {
     const normalized = backendCategory.toUpperCase().trim();
-    const validTypes: AssetFilter[] = ["STOCKS", "ETF", "CRYPTO", "BONDS", "CASH"];
-    if (validTypes.includes(normalized as AssetFilter)) return normalized as AssetFilter;
+    const categoryAliases: Record<string, AssetFilter> = {
+      STOCK: "STOCKS",
+      STOCKS: "STOCKS",
+      EQUITY: "STOCKS",
+      EQUITIES: "STOCKS",
+      ETF: "ETF",
+      ETFS: "ETF",
+      CRYPTO: "CRYPTO",
+      CRYPTOCURRENCY: "CRYPTO",
+      BOND: "BONDS",
+      BONDS: "BONDS",
+      FIXED_INCOME: "BONDS",
+      CASH: "CASH",
+    };
+    if (categoryAliases[normalized]) return categoryAliases[normalized];
   }
   // Fallback: regex heuristic guess
-  const text = `${symbol} ${name}`.toUpperCase();
   if (/(BTC|ETH|SOL|BNB|USDT|USDC|XRP|ADA|DOGE)/.test(text)) return "CRYPTO";
   if (/(ETF|SPY|QQQ|VOO|VTI|IWM|DIA)/.test(text)) return "ETF";
   if (/(BOND|TBILL|TREASURY|NOTE)/.test(text)) return "BONDS";
@@ -112,13 +151,14 @@ function assetType(symbol: string, name = "", backendCategory?: string): AssetFi
 }
 
 function formatCompact(value: number) {
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-  if (abs >= 1_000_000_000_000) return `${sign}$${(abs / 1_000_000_000_000).toFixed(2)}T`;
-  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(2)}B`;
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}$${formatNumber(abs)}`;
-  return `${sign}$${abs.toFixed(2)}`;
+  if (!Number.isFinite(value)) return "$0.00";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: Math.abs(value) >= 1_000 ? "compact" : "standard",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: Math.abs(value) >= 1_000 ? 0 : 2,
+  }).format(value);
 }
 
 function formatPct(value: number) {
@@ -126,10 +166,30 @@ function formatPct(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
-function getCurrencyRate(currency: string | null | undefined, currencyRates: Record<string, number>) {
+function formatRangeLabel(range: RangeKey) {
+  const lookup: Record<RangeKey, string> = {
+    "1D": "Past 1 day",
+    "7D": "Past 7 days",
+    "30D": "Past 30 days",
+    "3M": "Past 3 months",
+    "1Y": "Past 1 year",
+    "ALL": "All history",
+  };
+  return lookup[range];
+}
+
+function formatShortDate(date: string | undefined) {
+  if (!date) return "--";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Chart values are canonical USD; VND=25,400 therefore converts by division. */
+function toUsd(amount: number, currency: string | null | undefined, currencyRates: Record<string, number>) {
   const normalized = currency?.trim().toUpperCase() || "USD";
-  if (normalized === "USD" || normalized === "USDT" || normalized === "USDC") return 1;
-  return currencyRates[normalized] ?? 1;
+  if (normalized === "USD" || normalized === "USDT" || normalized === "USDC") return amount;
+  return convertCurrency(amount, normalized, "USD", currencyRates);
 }
 
 function filterByRange(points: ChartPoint[], range: RangeKey) {
@@ -141,6 +201,165 @@ function filterByRange(points: ChartPoint[], range: RangeKey) {
   return filtered.length ? filtered : points.slice(-1);
 }
 
+function getRangeStart(points: ChartPoint[], range: RangeKey) {
+  const days = RANGES.find(r => r.key === range)?.days;
+  if (!days || points.length < 2) return null;
+  const lastDate = new Date(points[points.length - 1].date).getTime();
+  return lastDate - days * 24 * 60 * 60 * 1000;
+}
+
+function buildHistoricalChartPoints(
+  transactions: Transaction[],
+  currentPrices: Record<string, number>,
+  currencyRates: Record<string, number>,
+  filter: AssetFilter,
+  historyPricesMap?: Record<string, Array<{ date: string; close: number | null; adjustedClose?: number | null }>>,
+) {
+  if (!historyPricesMap) return [];
+
+  const sorted = [...transactions]
+    .filter(t => filter === "ALL" || assetType(t.assetSymbol, t.assetName, (t as any).category ?? (t as any).assetCategory) === filter)
+    .sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+
+  if (sorted.length === 0) return [];
+
+  const earliestDate = sorted[0].transactionDate.slice(0, 10);
+  const txByDate = new Map<string, Transaction[]>();
+  const symbols = new Set<string>();
+  const timelineDates = new Set<string>();
+
+  for (const transaction of sorted) {
+    const date = transaction.transactionDate.slice(0, 10);
+    const symbol = transaction.assetSymbol.toUpperCase();
+    symbols.add(symbol);
+    timelineDates.add(date);
+    const bucket = txByDate.get(date) ?? [];
+    bucket.push(transaction);
+    txByDate.set(date, bucket);
+  }
+
+  const historyCursors: Record<string, HistoricalPointCursor> = {};
+  for (const symbol of symbols) {
+    const points = (historyPricesMap[symbol] ?? [])
+      .map(point => ({
+        date: point.date,
+        price: point.adjustedClose ?? point.close ?? 0,
+      }))
+      .filter(point => point.date >= earliestDate && Number.isFinite(point.price) && point.price > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (points.length > 0) {
+      historyCursors[symbol] = { points, index: 0, lastPrice: null };
+      for (const point of points) timelineDates.add(point.date);
+    }
+  }
+
+  const timeline = [...timelineDates].sort((a, b) => a.localeCompare(b));
+  if (timeline.length === 0) return [];
+
+  const state: Record<string, { quantity: number; cost: number; lastTradePrice: number }> = {};
+  const points: ChartPoint[] = [];
+  let cumulativeBuy = 0;
+  let cumulativeSell = 0;
+  let realizedPnl = 0;
+
+  for (const date of timeline) {
+    const dayTransactions = txByDate.get(date) ?? [];
+    let dailyBuy = 0;
+    let dailySell = 0;
+    for (const transaction of dayTransactions) {
+      const symbol = transaction.assetSymbol.toUpperCase();
+      const normalizedTradePrice = toUsd(transaction.price, transaction.currency, currencyRates);
+      const side = normalizeType(transaction.type);
+      const entry = state[symbol] ?? { quantity: 0, cost: 0, lastTradePrice: normalizedTradePrice };
+      entry.lastTradePrice = normalizedTradePrice;
+
+      if (side === "BUY") {
+        entry.quantity += transaction.quantity;
+        entry.cost += transaction.quantity * normalizedTradePrice;
+        const amount = transaction.quantity * normalizedTradePrice;
+        cumulativeBuy += amount;
+        dailyBuy += amount;
+      }
+      if (side === "SELL") {
+        const avgCost = entry.quantity > 0 ? entry.cost / entry.quantity : normalizedTradePrice;
+        const soldQty = Math.min(transaction.quantity, Math.max(entry.quantity, 0));
+        const soldCost = soldQty * avgCost;
+        const amount = soldQty * normalizedTradePrice;
+        cumulativeSell += amount;
+        dailySell += amount;
+        realizedPnl += amount - soldCost;
+        entry.quantity = Math.max(0, entry.quantity - transaction.quantity);
+        entry.cost = Math.max(0, entry.cost - soldCost);
+      }
+
+      state[symbol] = entry;
+    }
+
+    let value = 0;
+    // Keep this series consistent with the live-mode chart: it is the cost
+    // basis of the holdings that remain, not buy volume minus sell proceeds.
+    const invested = Object.values(state).reduce((sum, item) => sum + Math.max(0, item.cost), 0);
+    for (const symbol of symbols) {
+      const entry = state[symbol];
+      if (!entry || entry.quantity <= 0) continue;
+
+      const cursor = historyCursors[symbol];
+      if (cursor) {
+        while (cursor.index < cursor.points.length && cursor.points[cursor.index].date <= date) {
+          cursor.lastPrice = cursor.points[cursor.index].price;
+          cursor.index += 1;
+        }
+      }
+      if (cursor?.lastPrice != null) {
+        value += entry.quantity * cursor.lastPrice;
+      }
+    }
+
+    if (value > 0 || invested > 0 || dayTransactions.length > 0) {
+      points.push({
+        date,
+        value,
+        invested,
+        pnl: value - invested + realizedPnl,
+        buyTotal: cumulativeBuy,
+        sellTotal: cumulativeSell,
+        buyAmount: dailyBuy,
+        sellAmount: dailySell,
+        buyMarker: dailyBuy > 0 ? value : null,
+        sellMarker: dailySell > 0 ? value : null,
+      });
+    }
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const lastPoint = points[points.length - 1];
+  if (lastPoint && lastPoint.date !== today) {
+    let value = 0;
+    const invested = Object.values(state).reduce((sum, item) => sum + Math.max(0, item.cost), 0);
+    for (const symbol of symbols) {
+      const entry = state[symbol];
+      if (!entry || entry.quantity <= 0) continue;
+      const price = currentPrices[symbol] ?? historyCursors[symbol]?.lastPrice;
+      if (price != null) value += entry.quantity * price;
+    }
+    points.push({
+      date: today,
+      value,
+      invested,
+      pnl: value - invested + realizedPnl,
+      buyTotal: cumulativeBuy,
+      sellTotal: cumulativeSell,
+      buyAmount: 0,
+      sellAmount: 0,
+      buyMarker: null,
+      sellMarker: null,
+    });
+  }
+
+  return points;
+}
+
 function buildAnalytics(
   transactions: Transaction[],
   currentPrices: Record<string, number>,
@@ -148,6 +367,7 @@ function buildAnalytics(
   dataReady: boolean,
   range: RangeKey,
   filter: AssetFilter,
+  historyPricesMap?: Record<string, Array<{ date: string; close: number | null; adjustedClose?: number | null }>>,
 ) {
   const sorted = [...transactions].sort((a, b) =>
     new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime()
@@ -159,11 +379,13 @@ function buildAnalytics(
   let totalBuy = 0;
   let totalSell = 0;
   let realizedPnl = 0;
+  const historicalPoints = buildHistoricalChartPoints(transactions, currentPrices, currencyRates, filter, historyPricesMap);
+  const historicalModeAvailable = historyPricesMap !== undefined;
+  const useHistoricalPoints = historicalModeAvailable;
 
   for (const t of visible) {
     const symbol = t.assetSymbol.toUpperCase();
-    const fxRate = getCurrencyRate(t.currency, currencyRates);
-    const normalizedTradePrice = t.price * fxRate;
+    const normalizedTradePrice = toUsd(t.price, t.currency, currencyRates);
     const entry = state[symbol] ?? {
       quantity: 0,
       cost: 0,
@@ -174,6 +396,7 @@ function buildAnalytics(
       lastPrice: normalizedTradePrice,
     };
     const side = normalizeType(t.type);
+    let executedSellQty = 0;
     entry.name = t.assetName || entry.name;
     entry.lastPrice = normalizedTradePrice;
 
@@ -185,12 +408,14 @@ function buildAnalytics(
     }
     if (side === "SELL") {
       const avgCost = entry.quantity > 0 ? entry.cost / entry.quantity : normalizedTradePrice;
-      const soldCost = Math.min(t.quantity, entry.quantity) * avgCost;
-      const sellPnl = t.quantity * normalizedTradePrice - soldCost;
-      entry.quantity -= t.quantity;
+      const soldQty = Math.min(t.quantity, entry.quantity);
+      executedSellQty = soldQty;
+      const soldCost = soldQty * avgCost;
+      const sellPnl = soldQty * normalizedTradePrice - soldCost;
+      entry.quantity -= soldQty;
       entry.cost = Math.max(0, entry.cost - soldCost);
       entry.realizedPnl += sellPnl;
-      totalSell += t.quantity * normalizedTradePrice;
+      totalSell += soldQty * normalizedTradePrice;
       realizedPnl += sellPnl;
     }
 
@@ -202,12 +427,18 @@ function buildAnalytics(
 
     state[symbol] = entry;
 
-    const { value, invested } = summarizeState(state);
-    const date = t.transactionDate.slice(0, 10);
-    const point = { date, value, invested, pnl: value - invested + realizedPnl };
-    const last = points[points.length - 1];
-    if (last?.date === date) points[points.length - 1] = point;
-    else points.push(point);
+    if (!useHistoricalPoints) {
+      const { value, invested } = summarizeState(state);
+      const date = t.transactionDate.slice(0, 10);
+      const point = { date, value, invested, pnl: value - invested + realizedPnl, buyTotal: totalBuy, sellTotal: totalSell, buyAmount: side === 'BUY' ? t.quantity * normalizedTradePrice : 0, sellAmount: side === 'SELL' ? executedSellQty * normalizedTradePrice : 0, buyMarker: side === 'BUY' ? value : null, sellMarker: side === 'SELL' ? value : null };
+      const last = points[points.length - 1];
+      if (last?.date === date) points[points.length - 1] = point;
+      else points.push(point);
+    }
+  }
+
+  if (useHistoricalPoints) {
+    points.push(...historicalPoints);
   }
 
   let positions: Position[] = Object.entries(state)
@@ -247,9 +478,9 @@ function buildAnalytics(
   // NOTE: This is NOT the actual cash balance — integrate backend cash balance when available.
   const netTradingCashFlow = totalSell - totalBuy;
 
-  if (dataReady && points.length > 0) {
+  if (dataReady && points.length > 0 && !useHistoricalPoints) {
     const today = new Date().toISOString().slice(0, 10);
-    const currentPoint = { date: today, value: marketValue, invested: costBasis, pnl: totalPnl };
+    const currentPoint = { date: today, value: marketValue, invested: costBasis, pnl: totalPnl, buyTotal: totalBuy, sellTotal: totalSell, buyAmount: 0, sellAmount: 0, buyMarker: null, sellMarker: null };
     const lastPoint = points[points.length - 1];
 
     if (lastPoint.date === today) {
@@ -259,7 +490,19 @@ function buildAnalytics(
     }
   }
 
-  const rangedPoints = filterByRange(points, range);
+  const rangeStart = getRangeStart(points, range);
+  const firstVisibleIndex = rangeStart == null
+    ? 0
+    : points.findIndex(point => new Date(point.date).getTime() >= rangeStart);
+  const basePoint = firstVisibleIndex > 0 ? points[firstVisibleIndex - 1] : null;
+  const rangedPoints = filterByRange(points, range).map(point => ({
+    ...point,
+    buyTotal: Math.max(0, point.buyTotal - (basePoint?.buyTotal ?? 0)),
+    sellTotal: Math.max(0, point.sellTotal - (basePoint?.sellTotal ?? 0)),
+  }));
+  const rangedTransactions = rangeStart == null
+    ? visible
+    : visible.filter(transaction => new Date(transaction.transactionDate).getTime() >= rangeStart);
   const todayPnl = rangedPoints.length > 1
     ? rangedPoints[rangedPoints.length - 1].value - rangedPoints[rangedPoints.length - 2].value
     : 0;
@@ -280,12 +523,24 @@ function buildAnalytics(
   }, {});
   if (netTradingCashFlow > 0) allocation.CASH = (allocation.CASH ?? 0) + netTradingCashFlow;
 
-  const allocationData = Object.entries(allocation).filter(([, value]) => value > 0).map(([name, value]) => ({ name, value }));
+  const allocationData = Object.entries(allocation)
+    .filter(([, value]) => value > 0)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
   const winLoss = positions.filter(p => Math.abs(p.returnPct) > 0.01);
   const wins = winLoss.filter(p => p.returnPct > 0);
   const losses = winLoss.filter(p => p.returnPct < 0);
   const positivePnl = wins.reduce((sum, p) => sum + p.pnl, 0);
   const negativePnl = Math.abs(losses.reduce((sum, p) => sum + p.pnl, 0));
+
+  const rangedTotalBuy = rangedTransactions.reduce((sum, transaction) => {
+    if (normalizeType(transaction.type) !== "BUY") return sum;
+    return sum + toUsd(transaction.quantity * transaction.price, transaction.currency, currencyRates);
+  }, 0);
+  const rangedTotalSell = rangedTransactions.reduce((sum, transaction) => {
+    if (normalizeType(transaction.type) !== "SELL") return sum;
+    return sum + toUsd(transaction.quantity * transaction.price, transaction.currency, currencyRates);
+  }, 0);
 
   return {
     points: rangedPoints,
@@ -297,8 +552,10 @@ function buildAnalytics(
       todayPnl,
       totalPnl,
       totalReturnPct: costBasis > 0 ? (totalPnl / costBasis) * 100 : 0,
-      netTradingCashFlow,
-      trades: visible.length,
+      totalBuy: rangedTotalBuy,
+      totalSell: rangedTotalSell,
+      netTradingCashFlow: rangedTotalSell - rangedTotalBuy,
+      trades: rangedTransactions.length,
       winRate: winLoss.length ? (wins.length / winLoss.length) * 100 : 0,
       avgWin: wins.length ? wins.reduce((sum, p) => sum + p.returnPct, 0) / wins.length : 0,
       avgLoss: losses.length ? losses.reduce((sum, p) => sum + p.returnPct, 0) / losses.length : 0,
@@ -310,7 +567,7 @@ function buildAnalytics(
   };
 }
 
-function KpiCard({ label, value, badge, icon: Icon, hero = false, positive = true, neutral = false, description }: {
+function KpiCard({ label, value, badge, icon: Icon, hero = false, positive = true, neutral = false, description, metricBar, className = "" }: {
   label: string;
   value: string;
   badge?: string;
@@ -319,10 +576,20 @@ function KpiCard({ label, value, badge, icon: Icon, hero = false, positive = tru
   positive?: boolean;
   neutral?: boolean;
   description?: string;
+  className?: string;
+  metricBar?: {
+    leftLabel: string;
+    rightLabel: string;
+    leftValue: number;
+    rightValue: number;
+  };
 }) {
+  const totalBarValue = (metricBar?.leftValue ?? 0) + (metricBar?.rightValue ?? 0);
+  const leftPct = totalBarValue > 0 ? ((metricBar?.leftValue ?? 0) / totalBarValue) * 100 : 0;
+
   return (
-    <motion.div whileHover={{ y: -3 }} transition={{ duration: 0.18 }}>
-      <Card className={`antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all shadow-xl ${hero ? "min-h-[164px]" : "min-h-[132px]"}`}>
+    <motion.div whileHover={{ y: -3 }} transition={{ duration: 0.18 }} className={className}>
+      <Card className={`h-full antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all shadow-xl ${hero ? "min-h-[150px]" : "min-h-[150px]"}`}>
         <CardHeader className="flex-row items-start justify-between pb-2">
           <div>
             <CardDescription className="text-xs uppercase tracking-wide text-slate-500">{label}</CardDescription>
@@ -338,6 +605,20 @@ function KpiCard({ label, value, badge, icon: Icon, hero = false, positive = tru
               {badge}
             </Badge>
           )}
+          {metricBar && (
+            <div className="mt-3 space-y-2">
+              <div className="h-3 overflow-hidden rounded-full border border-white/5 bg-slate-950/80">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-emerald-400 transition-all"
+                  style={{ width: `${leftPct}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                <span>{metricBar.leftLabel}</span>
+                <span>{metricBar.rightLabel}</span>
+              </div>
+            </div>
+          )}
           {description && (
             <p className="mt-1.5 text-xs text-slate-500 leading-snug">{description}</p>
           )}
@@ -347,7 +628,14 @@ function KpiCard({ label, value, badge, icon: Icon, hero = false, positive = tru
   );
 }
 
-export default function PortfolioChart({ transactions, currentPrices, currencyRates, dataReady }: Props) {
+export default function PortfolioChart({
+  transactions,
+  currentPrices,
+  currencyRates,
+  dataReady,
+  historyPricesMap,
+  historyPricesLoaded = false,
+}: Props) {
   const { theme, setTheme, themes, textClass } = useTableTheme();
   const [range, setRange] = useState<RangeKey>("ALL");
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("ALL");
@@ -358,8 +646,8 @@ export default function PortfolioChart({ transactions, currentPrices, currencyRa
   }, []);
 
   const analytics = useMemo(
-    () => buildAnalytics(transactions, currentPrices, currencyRates, dataReady, range, assetFilter),
-    [transactions, currentPrices, currencyRates, dataReady, range, assetFilter]
+    () => buildAnalytics(transactions, currentPrices, currencyRates, dataReady, range, assetFilter, historyPricesMap),
+    [transactions, currentPrices, currencyRates, dataReady, range, assetFilter, historyPricesMap]
   );
 
   if (transactions.length === 0) return null;
@@ -368,25 +656,59 @@ export default function PortfolioChart({ transactions, currentPrices, currencyRa
   const totalPositive = metrics.totalPnl >= 0;
   const winners = topMovers.slice(0, 3);
   const losers = topMovers.slice(-3).reverse();
+  const visibleStart = points[0]?.date;
+  const visibleEnd = points[points.length - 1]?.date;
+  const assetFilterLabel = ASSET_FILTERS.find((item) => item.key === assetFilter)?.label ?? "All";
+  const allocationTotal = allocationData.reduce((sum, item) => sum + item.value, 0);
 
   return (
     <section className="mb-8 space-y-6">
-      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 lg:grid-cols-[1.35fr_1fr_1fr]">
-        <KpiCard hero label="Portfolio Value" value={formatCompact(metrics.marketValue)} badge={formatPct(metrics.totalReturnPct)} icon={BriefcaseBusiness} positive={totalPositive} neutral={metrics.marketValue === 0} />
-        <KpiCard label="Total Return" value={formatCompact(metrics.totalPnl)} badge={formatPct(metrics.totalReturnPct)} icon={Percent} positive={totalPositive} neutral={metrics.totalPnl === 0} description="Unrealized + realized gains" />
-        <KpiCard label={`P/L (${range})`} value={`${metrics.todayPnl >= 0 ? "+" : ""}${formatCompact(metrics.todayPnl)}`} icon={metrics.todayPnl >= 0 ? TrendingUp : TrendingDown} positive={metrics.todayPnl >= 0} neutral={metrics.todayPnl === 0} description={`Change in portfolio value over ${range}`} />
-        <KpiCard label="Net Trading Cash Flow" value={formatCompact(metrics.netTradingCashFlow)} icon={Banknote} positive={metrics.netTradingCashFlow >= 0} neutral={metrics.netTradingCashFlow === 0} description="Cash spent on buys vs. received from sells. Not profit/loss." />
-        <KpiCard label="Total Transactions" value={metrics.trades.toLocaleString("en-US")} icon={Activity} description="Buy, sell, swap & stake orders" />
-      </motion.div>
+      <Card className="antigravity-panel overflow-hidden border-white/5 bg-white/[0.02] shadow-2xl">
+        <CardHeader className="border-b border-white/5 bg-white/[0.015] pb-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <CardTitle className="text-white">Portfolio Snapshot</CardTitle>
+            <CardDescription>A compact read on value, performance and trading flow.</CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="border-white/10 bg-white/5 text-slate-200">{formatRangeLabel(range)}</Badge>
+            <Badge className="border-white/10 bg-white/5 text-slate-200">{assetFilterLabel}</Badge>
+            <Badge className="border-cyan-400/20 bg-cyan-400/10 text-cyan-200">{metrics.trades.toLocaleString("en-US")} trades</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
+          <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
+            <KpiCard className="xl:col-span-4" hero label="Portfolio Value" value={formatCompact(metrics.marketValue)} badge={formatPct(metrics.totalReturnPct)} icon={BriefcaseBusiness} positive={totalPositive} neutral={metrics.marketValue === 0} />
+            <KpiCard className="xl:col-span-4" label="Total Return" value={formatCompact(metrics.totalPnl)} badge={formatPct(metrics.totalReturnPct)} icon={Percent} positive={totalPositive} neutral={metrics.totalPnl === 0} description="Unrealized plus realized performance." />
+            <KpiCard className="xl:col-span-4" label="Period Change" value={`${metrics.todayPnl >= 0 ? "+" : ""}${formatCompact(metrics.todayPnl)}`} icon={metrics.todayPnl >= 0 ? TrendingUp : TrendingDown} positive={metrics.todayPnl >= 0} neutral={metrics.todayPnl === 0} description={`${formatRangeLabel(range)} move in portfolio value.`} />
+            <KpiCard
+              className="xl:col-span-6"
+              label="Net Trading Cash Flow"
+              value={formatCompact(metrics.netTradingCashFlow)}
+              icon={Banknote}
+              positive={metrics.netTradingCashFlow >= 0}
+              neutral={metrics.netTradingCashFlow === 0}
+              metricBar={{
+                leftLabel: `Buy ${formatCompact(metrics.totalBuy)}`,
+                rightLabel: `Sell ${formatCompact(metrics.totalSell)}`,
+                leftValue: Math.abs(metrics.totalBuy),
+                rightValue: Math.abs(metrics.totalSell),
+              }}
+              description="Sell proceeds minus buy spend. Cash movement only, not profit."
+            />
+            <KpiCard className="xl:col-span-3" label="Gross Buy Volume" value={formatCompact(metrics.totalBuy)} icon={TrendingDown} positive={false} neutral={metrics.totalBuy === 0} description="Total cash deployed into buys." />
+            <KpiCard className="xl:col-span-3" label="Gross Sell Volume" value={formatCompact(metrics.totalSell)} icon={TrendingUp} positive={true} neutral={metrics.totalSell === 0} description="Total cash recovered from sells." />
+          </motion.div>
+        </CardContent>
+      </Card>
 
       <Card className="antigravity-panel border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all">
         <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-white">
               <LineChart className="h-5 w-5 text-cyan-300" />
-              Portfolio Value Over Time
+              Portfolio Curve
             </CardTitle>
-            <CardDescription>Equity curve, invested capital and portfolio value in one clean view.</CardDescription>
+              <CardDescription>Market value, P&L, cost basis, and buy/sell activity.</CardDescription>
           </div>
           <Tabs value={range} onValueChange={value => setRange(value as RangeKey)}>
             <TabsList className="bg-slate-950/80">
@@ -401,10 +723,23 @@ export default function PortfolioChart({ transactions, currentPrices, currencyRa
             </TabsList>
           </Tabs>
 
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <Badge className="border-white/10 bg-white/[0.03] text-slate-200">
+              Window {formatShortDate(visibleStart)} - {formatShortDate(visibleEnd)}
+            </Badge>
+            <Badge className="border-white/10 bg-white/[0.03] text-slate-200">
+              Filter {assetFilterLabel}
+            </Badge>
+          </div>
+
           <div className="h-[360px]">
             {!dataReady ? (
               <div className="flex h-full items-center justify-center rounded-2xl border border-white/5 bg-slate-950/40 text-sm text-slate-400">
-                Dang tai gia tri thuc cua danh muc...
+                Loading the live portfolio curve...
+              </div>
+            ) : range === "ALL" && assetFilter === "ALL" && historyPricesLoaded && Object.values(historyPricesMap ?? {}).every(points => !points || points.length === 0) ? (
+              <div className="flex h-full items-center justify-center rounded-2xl border border-amber-400/10 bg-amber-500/5 px-6 text-center text-sm text-amber-200">
+                Historical price data is unavailable, so this curve cannot be rebuilt for the full portfolio view.
               </div>
             ) : mounted && (
               <AutoSizedChart>
@@ -420,10 +755,15 @@ export default function PortfolioChart({ transactions, currentPrices, currencyRa
                   <YAxis stroke="#64748b" tickLine={false} axisLine={false} width={72} tickFormatter={value => formatCompact(Number(value))} />
                   <Tooltip
                     cursor={{ stroke: "#38bdf8", strokeOpacity: 0.35 }}
-                    content={<ChartTooltip valueFormatter={(value) => formatCompact(Number(value ?? 0))} />}
+                    content={<ChartTooltip labelFormatter={formatShortDate} valueFormatter={(value) => formatCompact(Number(value ?? 0))} />}
                   />
-                  <Area type="monotone" dataKey="invested" name="Invested" stroke="#64748b" strokeWidth={1.5} fill="transparent" dot={false} isAnimationActive animationDuration={650} />
-                  <Area type="monotone" dataKey="value" name="Portfolio Value" stroke="#38bdf8" strokeWidth={2.5} fill="url(#portfolioValueGradient)" dot={false} activeDot={{ r: 5 }} isAnimationActive animationDuration={750} />
+                  <Area type="linear" dataKey="invested" name="Cost Basis" stroke="#64748b" strokeWidth={1.5} fill="transparent" dot={false} isAnimationActive animationDuration={650} />
+                  <Line type="linear" dataKey="buyTotal" name="Cumulative Buy" stroke="#f97316" strokeWidth={1.5} strokeDasharray="5 5" dot={false} isAnimationActive animationDuration={650} />
+                  <Line type="linear" dataKey="sellTotal" name="Cumulative Sell" stroke="#22c55e" strokeWidth={1.5} strokeDasharray="5 5" dot={false} isAnimationActive animationDuration={650} />
+                  <Line type="linear" dataKey="pnl" name="Profit / Loss" stroke="#a78bfa" strokeWidth={1.75} dot={false} isAnimationActive animationDuration={650} />
+                  <Area type="linear" dataKey="value" name="Portfolio Value" stroke="#38bdf8" strokeWidth={2.5} fill="url(#portfolioValueGradient)" dot={false} activeDot={{ r: 5 }} isAnimationActive animationDuration={750} />
+                  <Line type="linear" dataKey="buyMarker" name="Buy marker" stroke="transparent" dot={{ r: 4, fill: '#10b981', stroke: '#052e16', strokeWidth: 1.5 }} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                  <Line type="linear" dataKey="sellMarker" name="Sell marker" stroke="transparent" dot={{ r: 4, fill: '#fb7185', stroke: '#4c0519', strokeWidth: 1.5 }} activeDot={false} connectNulls={false} isAnimationActive={false} />
                 </AreaChart>
               </AutoSizedChart>
             )}
@@ -431,7 +771,12 @@ export default function PortfolioChart({ transactions, currentPrices, currencyRa
 
           <div className="flex flex-wrap gap-4 text-xs text-slate-400">
             <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-cyan-300" /> Portfolio Value</span>
-            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-slate-500" /> Invested Capital</span>
+            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-slate-500" /> Cost Basis</span>
+            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-orange-400" /> Cumulative Buy</span>
+            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Cumulative Sell</span>
+            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-violet-400" /> Profit / Loss</span>
+            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Buy marker</span>
+            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-rose-400" /> Sell marker</span>
           </div>
         </CardContent>
       </Card>
@@ -457,7 +802,7 @@ export default function PortfolioChart({ transactions, currentPrices, currencyRa
             </div>
             <div className="space-y-3 self-center">
               {allocationData.map((item, index) => {
-                const pct = metrics.marketValue + metrics.netTradingCashFlow > 0 ? (item.value / (metrics.marketValue + metrics.netTradingCashFlow)) * 100 : 0;
+                const pct = allocationTotal > 0 ? (item.value / allocationTotal) * 100 : 0;
                 return (
                   <div key={item.name} className="flex items-center justify-between gap-3 text-sm">
                     <span className="flex items-center gap-2 text-slate-300">

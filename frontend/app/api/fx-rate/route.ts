@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import YahooFinanceClass from "yahoo-finance2";
 const yahooFinance = new YahooFinanceClass();
 
@@ -56,14 +56,14 @@ async function getUsdRate(currency: string): Promise<number> {
   const actualCurrency = subunit ? subunit.parent : normalized;
   
   try {
-    const quote = await yahooFinance.quote(`${actualCurrency}USD=X`);
+    const quote = await yahooFinance.quote(actualCurrency + "=X");
     const rate = quote.regularMarketPrice;
     if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
-      throw new Error(`Unable to resolve FX rate for ${currency}`);
+      throw new Error("Unable to resolve FX rate for " + currency);
     }
     return subunit ? rate / subunit.divisor : rate;
   } catch (error) {
-    throw new Error(`Unable to resolve FX rate for ${currency}: ${error}`);
+    throw new Error("Unable to resolve FX rate for " + currency + ": " + error);
   }
 }
 

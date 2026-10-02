@@ -1,4 +1,3 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import YahooFinanceClass from 'yahoo-finance2';
 const yahooFinance = new YahooFinanceClass();
 import { NextRequest, NextResponse } from 'next/server';
@@ -28,11 +27,33 @@ const SYMBOL_ALIASES: Record<string, string> = {
 };
 
 function getSymbolCandidates(symbol: string) {
-  const normalized = symbol.trim().toUpperCase();
+  const raw = symbol.trim().toUpperCase();
+  const normalized = raw.replace(/[\s.,]+$/, "");
   const alias = SYMBOL_ALIASES[normalized] ?? normalized;
-  if (alias.includes(".")) return [alias];
-  if (/^\d{4,6}$/.test(alias)) return [`${alias}.TW`, `${alias}.TWO`, alias];
-  return [alias, `${alias}.VN`];
+  const candidates: string[] = [];
+
+  const addCandidate = (cand?: string | null) => {
+    if (!cand) return;
+    const clean = cand.trim().toUpperCase();
+    if (clean && !candidates.includes(clean)) candidates.push(clean);
+  };
+
+  if (raw !== normalized) addCandidate(normalized);
+  addCandidate(alias);
+  if (alias.includes(".")) {
+    addCandidate(alias.replace(/\./g, "-"));
+    addCandidate(alias.replace(/\./g, ""));
+    return candidates;
+  }
+  if (/^\d{4,6}$/.test(alias)) {
+    addCandidate(`${alias}.TW`);
+    addCandidate(`${alias}.TWO`);
+    addCandidate(alias);
+    return candidates;
+  }
+  addCandidate(alias);
+  addCandidate(`${alias}.VN`);
+  return candidates;
 }
 
 export async function GET(req: NextRequest) {
@@ -110,6 +131,7 @@ export async function GET(req: NextRequest) {
         });
 
         // Convert map to array and calculate ratios
+        const fetchedAt = new Date().toISOString();
         const reports = Object.values(reportsMap)
           .map((r: any) => {
             const revenue = r.incomeStatement?.revenue ?? 0;
@@ -136,6 +158,8 @@ export async function GET(req: NextRequest) {
             return {
               id: `${cleanSymbol}_${r.year}`,
               symbol: cleanSymbol,
+              source: 'Yahoo Finance fundamentalsTimeSeries',
+              fetchedAt,
               year: r.year,
               period: 'FY',
               incomeStatement: { revenue, grossProfit, operatingIncome, netIncome },

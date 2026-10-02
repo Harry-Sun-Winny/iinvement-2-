@@ -5,21 +5,38 @@ import { format } from "date-fns";
 import { Download, FileText, Paperclip, Send, X, Search } from "lucide-react";
 import toast from "react-hot-toast";
 import { useJournal } from "@/hooks/useJournal";
+import { useTranslation } from "@/components/providers/I18nProvider";
 
 interface JournalPanelProps {
   symbol?: string;
   portfolioId: string;
   aiResult?: string;
   aiChartImages?: string[];
+  onSelectAIResult?: (rawJson: string) => void;
+  mode?: "history" | "journal" | "combined";
 }
 
 export const JournalPanel: React.FC<JournalPanelProps> = ({
   symbol,
   portfolioId,
   aiResult,
+  onSelectAIResult,
+  mode = "combined",
 }) => {
+  const { t, language } = useTranslation();
+  const isVi = language === "vi";
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
-  const { entries, isLoading, createEntry, saveAIAnalysis } = useJournal(portfolioId, symbol);
+  const { entries: hookEntries, isLoading, createEntry, saveAIAnalysis } = useJournal(portfolioId, symbol);
+
+  const entries = useMemo(() => {
+    if (mode === "history") {
+      return hookEntries.filter(e => e.entry_type === "ai_analysis");
+    }
+    if (mode === "journal") {
+      return hookEntries.filter(e => e.entry_type !== "ai_analysis");
+    }
+    return hookEntries;
+  }, [hookEntries, mode]);
   const [newEntry, setNewEntry] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -146,30 +163,35 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
       setFiles([]);
       toast.success("Đã thêm ghi chú");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Có lỗi xảy ra");
+      toast.error(error instanceof Error ? error.message : t("common.error"));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="sticky top-8 flex h-[600px] flex-col overflow-hidden rounded-xl border border-[#1A2540] bg-[#0D1528] shadow-xl">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-[#1A2540] bg-[#0d1528]/80 shadow-xl backdrop-blur-md">
       <div className="flex shrink-0 items-center justify-between border-b border-[#1A2540] bg-[#141B30] px-4 py-3">
         <div className="flex items-center gap-2">
           <FileText size={18} className="text-blue-400" />
           <h2 className="text-sm font-bold uppercase tracking-wider text-[#E7E9EE]">
-            {symbol ? `Nhật ký — ${symbol}` : "Nhật ký toàn bộ danh mục"}
+            {mode === "history"
+              ? (isVi ? "Lịch sử thẩm định" : "Appraisal History")
+              : mode === "journal"
+              ? (isVi ? "Nhật ký & Ghi chú" : "Portfolio Notes")
+              : (symbol ? `${t("analysis.stockJournal")} — ${symbol}` : t("analysis.portfolioJournal"))
+            }
           </h2>
         </div>
-        {aiResult && (
+        {aiResult && mode !== "journal" && (
           <button
             onClick={handleSaveAI}
             disabled={isSubmitting}
             className="flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
-            title="Lưu kết quả phân tích AI hiện tại vào nhật ký"
+            title={t("analysis.saveNote")}
           >
             <Download size={12} />
-            Lưu AI
+            {t("common.save")} AI
           </button>
         )}
       </div>
@@ -181,7 +203,7 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
           <Search size={12} className="absolute left-2.5 text-[#6B7FA3]" />
           <input
             type="text"
-            placeholder="Tìm kiếm từ khóa..."
+            placeholder={t("common.search")}
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -227,7 +249,7 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
 
         {/* Date Filter */}
         <div className="flex items-center gap-1.5">
-          <span className="text-[#6B7FA3]">Ngày:</span>
+          <span className="text-[#6B7FA3]">{t("common.date")}:</span>
           <input
             type="date"
             value={selectedDate}
@@ -247,7 +269,7 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
             }}
             className="rounded bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-400 hover:bg-rose-500/20 transition-colors"
           >
-            Xóa bộ lọc
+            {t("analysis.clearFilter")}
           </button>
         )}
       </div>
@@ -258,10 +280,10 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
 
       <div className="flex-1 space-y-4 overflow-y-auto p-4 custom-scrollbar">
         {isLoading ? (
-          <div className="mt-4 text-center text-xs text-[#6B7FA3]">Đang tải...</div>
+          <div className="mt-4 text-center text-xs text-[#6B7FA3]">{t("common.loading")}</div>
         ) : filteredEntries.length === 0 ? (
           <div className="mt-10 text-center text-xs italic text-[#6B7FA3]">
-            {selectedDate ? "Không có ghi chú nào trong ngày này..." : "Chưa có ghi chú nào..."}
+            {selectedDate ? t("analysis.noNotes") : t("analysis.noNotes")}
           </div>
         ) : (
           filteredEntries.map((entry) => {
@@ -280,9 +302,20 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
               >
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[10px] font-semibold uppercase text-blue-400">{entry.title}</span>
-                  <span className="text-[10px] text-[#6B7FA3]">
-                    {format(new Date(entry.created_at), "dd/MM HH:mm")}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {entry.entry_type === "ai_analysis" && onSelectAIResult && (
+                      <button
+                        onClick={() => onSelectAIResult(entry.content)}
+                        className="rounded bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-bold text-cyan-450 hover:bg-cyan-500/25 transition-colors border border-cyan-500/20"
+                        title={isVi ? "Tải lại hồ sơ thẩm định này" : "Load this appraisal report"}
+                      >
+                        📂 {isVi ? "Tải hồ sơ" : "Load"}
+                      </button>
+                    )}
+                    <span className="text-[10px] text-[#6B7FA3]">
+                      {format(new Date(entry.created_at), "dd/MM HH:mm")}
+                    </span>
+                  </div>
                 </div>
                 <p className="mb-2 whitespace-pre-wrap text-xs text-[#E7E9EE]">
                   {highlightText(entry.content, searchQuery, isActiveMatch)}
@@ -313,7 +346,7 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
                                   w.document.write(`<img src="${attachmentUrl}" style="max-width:100%; height:auto;" />`);
                                 }
                               }}
-                              title="Nhấn để phóng to"
+                              title={t("analysis.attachFile")}
                             />
                           ) : attachmentUrl ? (
                             <a
@@ -336,7 +369,7 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
                 ) : (
                   entry.attachment_count > 0 && (
                     <div className="flex w-fit items-center gap-1 rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-[10px] text-[#6B7FA3]">
-                      <Paperclip size={10} /> Đính kèm: {entry.attachment_count} tệp
+                      <Paperclip size={10} /> {t("analysis.attachmentsCount", { count: entry.attachment_count })}
                     </div>
                   )
                 )}
@@ -346,63 +379,65 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-[#1A2540] bg-[#141B30] p-3">
-        {files.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {files.map((file, index) => (
-              <div
-                key={`${file.name}-${index}`}
-                className="flex items-center gap-1 rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-[10px] text-[#E7E9EE]"
-              >
-                <Paperclip size={10} className="text-[#6B7FA3]" />
-                <span className="max-w-[100px] truncate">{file.name}</span>
-                <button onClick={() => removeFile(index)} className="ml-1 text-rose-400 hover:text-rose-500">
-                  <X size={10} />
-                </button>
-              </div>
-            ))}
+      {mode !== "history" && (
+        <div className="shrink-0 border-t border-[#1A2540] bg-[#141B30] p-3">
+          {files.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {files.map((file, index) => (
+                <div
+                  key={`${file.name}-${index}`}
+                  className="flex items-center gap-1 rounded border border-[#1A2540] bg-[#0D1528] px-2 py-1 text-[10px] text-[#E7E9EE]"
+                >
+                  <Paperclip size={10} className="text-[#6B7FA3]" />
+                  <span className="max-w-[100px] truncate">{file.name}</span>
+                  <button onClick={() => removeFile(index)} className="ml-1 text-rose-400 hover:text-rose-500">
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="mb-0.5 rounded-lg border border-[#1A2540] bg-[#0D1528] p-2 text-[#6B7FA3] transition-colors hover:text-[#E7E9EE]"
+              title={t("analysis.attachFile")}
+            >
+              <Paperclip size={16} />
+            </button>
+            <textarea
+              value={newEntry}
+              onChange={(e) => setNewEntry(e.target.value)}
+              placeholder={t("analysis.writeNotePlaceholder", { name: symbol ?? t("sidebar.portfolio") })}
+              className="min-h-[60px] max-h-[120px] flex-1 resize-y rounded-lg border border-[#1A2540] bg-[#0D1528] p-2 text-xs text-[#E7E9EE] placeholder-[#6B7FA3] focus:border-blue-500 focus:outline-none"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting || (!newEntry.trim() && files.length === 0)}
+              className="mb-0.5 flex items-center gap-1 rounded-lg bg-blue-500 p-2 text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send size={16} />
+              {isSubmitting && <span className="text-[10px]">...</span>}
+            </button>
           </div>
-        )}
-        <div className="flex items-end gap-2">
-          <input
-            type="file"
-            multiple
-            className="hidden"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="mb-0.5 rounded-lg border border-[#1A2540] bg-[#0D1528] p-2 text-[#6B7FA3] transition-colors hover:text-[#E7E9EE]"
-            title="Đính kèm file"
-          >
-            <Paperclip size={16} />
-          </button>
-          <textarea
-            value={newEntry}
-            onChange={(e) => setNewEntry(e.target.value)}
-            placeholder="Viết ghi chú mới..."
-            className="min-h-[60px] max-h-[120px] flex-1 resize-y rounded-lg border border-[#1A2540] bg-[#0D1528] p-2 text-xs text-[#E7E9EE] placeholder-[#6B7FA3] focus:border-blue-500 focus:outline-none"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-          />
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting || (!newEntry.trim() && files.length === 0)}
-            className="mb-0.5 flex items-center gap-1 rounded-lg bg-blue-500 p-2 text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Send size={16} />
-            {isSubmitting && <span className="text-[10px]">...</span>}
-          </button>
+          <div className="mt-2 text-[10px] text-[#6B7FA3]">
+            {t("analysis.enterToSend")}
+          </div>
         </div>
-        <div className="mt-2 text-[10px] text-[#6B7FA3]">
-          Nhấn Enter để gửi, Shift + Enter để xuống dòng
-        </div>
-      </div>
+      )}
     </div>
   );
 };

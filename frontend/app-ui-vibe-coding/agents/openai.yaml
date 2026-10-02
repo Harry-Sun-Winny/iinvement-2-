@@ -1,0 +1,7 @@
+interface:
+  display_name: "App UI Vibe Coding"
+  short_description: "Giữ đúng gu giao diện khi vibe-code app"
+  default_prompt: "Use $app-ui-vibe-coding to build or revise this app while preserving my UI contract."
+
+policy:
+  allow_implicit_invocation: true

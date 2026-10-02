@@ -1,3 +1,4 @@
+
 package com.acme.investment.application.taxlot;
 
 import com.acme.investment.infrastructure.persistence.transaction.TransactionEntity;
@@ -67,7 +68,7 @@ public class TaxLotService {
             }
 
             if (remainingToSell.signum() > 0) {
-                throw new IllegalStateException(String.format(
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, String.format(
                         "FIFO short-sell detected for portfolio=%s symbol=%s txn=%s: " +
                         "selling %s more shares than currently held lots cover",
                         portfolioId, symbol, t.getId(), remainingToSell));
@@ -92,3 +93,6 @@ public class TaxLotService {
         return total;
     }
 }
+
+
+

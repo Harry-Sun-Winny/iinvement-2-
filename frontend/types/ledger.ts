@@ -18,6 +18,7 @@ export interface TransactionDTO extends BaseEntity {
   type: TransactionType;
   transactionDate: string; // ISO format date string (YYYY-MM-DD)
   lotId?: string; // Optional UUID linking sell transactions back to buy lots
+  notes?: string; // Source/audit note, e.g. STOCK_DIVIDEND:<eventId>
 }
 
 export type BondStatus = 'ACTIVE' | 'SOLD' | 'MATURED';
@@ -70,6 +71,8 @@ export interface FinancialRatios {
 
 export interface FinancialReportDTO extends BaseEntity {
   symbol: string;
+  source?: string;
+  fetchedAt?: string;
   year: number;
   period: 'Q1' | 'Q2' | 'Q3' | 'Q4' | 'H1' | 'H2' | 'FY';
   incomeStatement: IncomeStatement;
