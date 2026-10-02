@@ -25,7 +25,7 @@ export const JournalPanel: React.FC<JournalPanelProps> = ({
 }) => {
   const { t, language } = useTranslation();
   const isVi = language === "vi";
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+  const apiBaseUrl = "/api/backend";
   const { entries: hookEntries, isLoading, createEntry, saveAIAnalysis } = useJournal(portfolioId, symbol);
 
   const entries = useMemo(() => {

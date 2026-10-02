@@ -1,0 +1,64 @@
+name: antigravity
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: investment
+      POSTGRES_USER: investment
+      POSTGRES_PASSWORD: ${ANTIGRAVITY_DB_PASSWORD:?Run INSTALL-WINDOWS.ps1 first}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U investment -d investment"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/investment
+      SPRING_DATASOURCE_USERNAME: investment
+      SPRING_DATASOURCE_PASSWORD: ${ANTIGRAVITY_DB_PASSWORD:?Run INSTALL-WINDOWS.ps1 first}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SECURITY_JWT_SECRET: ${ANTIGRAVITY_JWT_SECRET:?Run INSTALL-WINDOWS.ps1 first}
+      JOURNAL_ATTACHMENTS_STORAGE_ROOT: /app/work/journal-attachments
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      FMP_API_KEY: ${FMP_API_KEY:-}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+    volumes:
+      - journal_attachments:/app/work/journal-attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_API_URL: http://backend:8080
+    restart: unless-stopped
+    environment:
+      BACKEND_API_URL: http://backend:8080
+    ports:
+      - "127.0.0.1:3002:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  journal_attachments:
